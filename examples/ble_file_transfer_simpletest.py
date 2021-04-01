@@ -29,6 +29,10 @@ while True:
                 client.write("/hello.txt", "Hello world".encode("utf-8"))
                 c = client.read("/hello.txt")
                 print(c)
+                client.mkdir("/world/")
+                print(client.listdir("/world/"))
+                client.write("/world/hello.txt", "Hi world".encode("utf-8"))
+                print(client.listdir("/world/"))
             time.sleep(5)
     except ConnectionError:
         pass

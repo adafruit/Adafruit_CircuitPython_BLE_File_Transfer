@@ -93,12 +93,15 @@ class FileTransferService(Service):
     READ = 0x01
     WRITE = 0x02
     DELETE = 0x03
-    LIST = 0x04
+    MKDIR = 0x04
+    LISTDIR = 0x05
 
     # Responses
     # 0x00 is INVALID
     OK = 0x81
     ERR = 0x82
+
+    ERR_NO_FILE = 0xb0
 
 class FileTransferClient:
     def __init__(self, service):
@@ -111,7 +114,7 @@ class FileTransferClient:
         encoded = struct.pack(">BIH", FileTransferService.READ, chunk_size, len(path)) + path
         # TODO: we may need to split this packet up.
         r = self._service.raw.write(encoded)
-        b = bytearray(struct.calcsize(">BBI"))
+        b = bytearray(struct.calcsize(">BBII") + chunk_size)
         print("write", r, encoded)
         contents_read = 0
         content_length = None
@@ -121,12 +124,20 @@ class FileTransferClient:
             # Read back how much we can write
             while read == 0:
                 read = self._service.raw.readinto(b)
-            cmd, status, content_length = struct.unpack_from(">BBI", b)
+            cmd, status, content_length, chunk_length = struct.unpack_from(">BBII", b)
+            print("got reply", cmd, status, content_length, chunk_length)
             if buf is None:
                 buf = bytearray(content_length)
-            header_size = struct.calcsize(">BBI")
-            buf[contents_read:contents_read + (read - header_size)] = b[header_size:]
+            header_size = struct.calcsize(">BBII")
+            print(read, header_size)
+            buf[contents_read:contents_read + (read - header_size)] = b[header_size:read]
             contents_read += read - header_size
+            print("total read", contents_read, buf)
+            chunk_size = min(10, content_length - contents_read)
+            print("replying requesting", chunk_size)
+            encoded = struct.pack(">BBI", FileTransferService.READ, FileTransferService.OK, chunk_size)
+            r = self._service.raw.write(encoded)
+        print("return", buf)
         return buf
     
     def write(self, path, contents):
@@ -147,6 +158,24 @@ class FileTransferClient:
             print(cmd, status, free_space)
             self._service.raw.write(contents[written:written+free_space])
             written += free_space
+
+    def mkdir(self, path):
+        print("mkdir", path)
+        path = path.encode("utf-8")
+        encoded = struct.pack(">BH", FileTransferService.MKDIR, len(path)) + path
+        # TODO: we may need to split this packet up.
+        r = self._service.raw.write(encoded)
+
+        b = bytearray(struct.calcsize(">BB"))
+        read = 0
+        # Read back how much we can write
+        while read == 0:
+            read = self._service.raw.readinto(b)
+        cmd, status = struct.unpack(">BB", b)
+        print(cmd, status)
+
+    def listdir(self, path):
+        print("listdir", path)
 
     def delete(self, path):
         print("delete", path)
