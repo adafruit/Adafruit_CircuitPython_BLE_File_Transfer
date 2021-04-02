@@ -32,7 +32,7 @@ def find_dir(path):
         piece = pieces[i]
         if piece not in parent:
             return None
-        parent = piece
+        parent = parent[piece]
         i += 1
     return parent
 
@@ -59,7 +59,9 @@ while True:
             contents_read = 0
             contents = bytearray(content_length)
             print("write", content_length, path)
-            print(path.split("/"))
+            d = find_dir(path)
+            filename = path.split("/")[-1]
+            print(filename)
             while contents_read < content_length:
                 next_amount = min(10, content_length - contents_read)
                 #print(FileTransferService.WRITE, FileTransferService.OK)
@@ -69,8 +71,8 @@ while True:
                     read = service.raw.readinto(packet_buffer)
                 contents[contents_read:contents_read+read] = packet_buffer[:read]
                 contents_read += read
-                #print(read, packet_buffer[:read])
-            stored_data[path] = contents
+                print(read, packet_buffer[:read])
+            d[filename] = contents
 
         elif command == adafruit_ble_file_transfer.FileTransferService.READ:
             free_space, path_length = struct.unpack_from(">IH", p, offset=1)
@@ -78,18 +80,19 @@ while True:
             path = str(p[path_start:path_start+path_length], "utf-8")
             print("read", path)
             d = find_dir(path)
-            if path not in d:
+            filename = path.split("/")[-1]
+            if filename not in d:
                 print("missing path")
-                service.raw.write(struct.pack(">BBB", FileTransferService.READ, FileTransferService.ERR, FileTransferService.ERR_NO_FILE))
+                service.raw.write(struct.pack(">BBII", FileTransferService.READ, FileTransferService.ERR, 0, 0))
                 continue
 
             contents_sent = 0
-            contents = stored_data[path]
+            contents = stored_data[filename]
             while contents_sent < len(contents):
                 remaining = len(contents) - contents_sent
                 next_amount = min(remaining, free_space)
                 print("sending", next_amount)
-                header = struct.pack(">BBII", FileTransferService.WRITE, FileTransferService.OK, len(contents), next_amount)
+                header = struct.pack(">BBII", FileTransferService.READ, FileTransferService.OK, len(contents), next_amount)
                 service.raw.write(header + contents[contents_sent:contents_sent + next_amount])
                 contents_sent += next_amount
 
@@ -121,6 +124,29 @@ while True:
                 header = struct.pack(">BB", FileTransferService.WRITE, FileTransferService.OK)
             else:
                 header = struct.pack(">BB", FileTransferService.WRITE, FileTransferService.ERR)
+            service.raw.write(header)
+        elif command == adafruit_ble_file_transfer.FileTransferService.LISTDIR:
+            path_length = struct.unpack_from(">H", p, offset=1)[0]
+            path_start = struct.calcsize(">BH")
+            path = str(p[path_start:path_start+path_length], "utf-8")
+            print("listdir", path)
+
+            # cmd, status, i, total, flags, file_size, path_length = struct.unpack(">BBIIBIH", b)
+
+            d = find_dir(path)
+            if d is None:
+                error = struct.pack(">BBIIBIH", FileTransferService.WRITE, FileTransferService.ERR, 0, 0, 0, 0, 0)
+                service.raw.write(error)
+
+            print(d, type(d))
+            filenames = sorted(d.keys())
+            total_files = len(filenames)
+            for i, filename in enumerate(filenames):
+                print(i, filename)
+                header = struct.pack(">BBIIBIH", FileTransferService.WRITE, FileTransferService.OK, i, total_files, 0, 0, 0)
+                service.raw.write(header + filename.encode("utf-8"))
+            print("send last entry")
+            header = struct.pack(">BBIIBIH", FileTransferService.WRITE, FileTransferService.OK, total_files, total_files, 0, 0, 0)
             service.raw.write(header)
         else:
             print("unknown command", command)
