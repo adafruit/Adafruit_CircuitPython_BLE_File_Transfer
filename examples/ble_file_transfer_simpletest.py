@@ -31,9 +31,21 @@ while True:
                 print(c)
                 client.mkdir("/world/")
                 print(client.listdir("/world/"))
-                client.write("/world/hello.txt", "Hi world".encode("utf-8"))
+                client.write("/world/hi.txt", "Hi world".encode("utf-8"))
+                client.write("/world/hello.txt", "Hello world".encode("utf-8"))
+                c = client.read("/world/hello.txt")
+                print(c)
                 print(client.listdir("/world/"))
-            time.sleep(5)
+                client.delete("/world/hello.txt")
+                try:
+                    client.delete("/world/") # should raise an exception
+                except ValueError:
+                    print("exception correctly raised")
+                print(client.listdir("/world/"))
+                client.delete("/world/hi.txt")
+                client.delete("/world/")
+                print(client.listdir("/"))
+            time.sleep(20)
     except ConnectionError:
         pass
 
