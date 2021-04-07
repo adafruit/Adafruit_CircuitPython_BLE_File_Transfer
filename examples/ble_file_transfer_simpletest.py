@@ -16,7 +16,8 @@ ble = BLERadio()
 while True:
     try:
         while ble.connected and any(
-            adafruit_ble_file_transfer.FileTransferService in connection for connection in ble.connections
+            adafruit_ble_file_transfer.FileTransferService in connection
+            for connection in ble.connections
         ):
             for connection in ble.connections:
                 if adafruit_ble_file_transfer.FileTransferService not in connection:
@@ -38,7 +39,7 @@ while True:
                 print(client.listdir("/world/"))
                 client.delete("/world/hello.txt")
                 try:
-                    client.delete("/world/") # should raise an exception
+                    client.delete("/world/")  # should raise an exception
                 except ValueError:
                     print("exception correctly raised")
                 print(client.listdir("/world/"))
