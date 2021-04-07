@@ -74,10 +74,10 @@ while True:
         if read == 0:
             continue
         p = packet_buffer[:read]
-        command = struct.unpack_from(">B", p)[0]
+        command = struct.unpack_from("<B", p)[0]
         if command == FileTransferService.WRITE:
-            content_length, path_length = struct.unpack_from(">IH", p, offset=1)
-            path_start = struct.calcsize(">BIH")
+            content_length, path_length = struct.unpack_from("<IH", p, offset=1)
+            path_start = struct.calcsize("<BIH")
             path = read_complete_path(p[path_start:], path_length)
             contents_read = 0
             contents = bytearray(content_length)
@@ -85,7 +85,7 @@ while True:
             filename = path.split("/")[-1]
             while contents_read < content_length:
                 next_amount = min(10, content_length - contents_read)
-                header = struct.pack(">BBI", FileTransferService.WRITE, FileTransferService.OK, next_amount)
+                header = struct.pack("<BBI", FileTransferService.WRITE, FileTransferService.OK, next_amount)
                 write_packets(header)
                 read = read_packets(packet_buffer, target_size=next_amount)
                 contents[contents_read:contents_read+read] = packet_buffer[:read]
@@ -93,14 +93,14 @@ while True:
             d[filename] = contents
 
         elif command == adafruit_ble_file_transfer.FileTransferService.READ:
-            free_space, path_length = struct.unpack_from(">IH", p, offset=1)
-            path_start = struct.calcsize(">BIH")
+            free_space, path_length = struct.unpack_from("<IH", p, offset=1)
+            path_start = struct.calcsize("<BIH")
             path = read_complete_path(p[path_start:], path_length)
             d = find_dir(path)
             filename = path.split("/")[-1]
             if filename not in d:
                 print("missing path")
-                error_response = struct.pack(">BBII", FileTransferService.READ, FileTransferService.ERR, 0, 0)
+                error_response = struct.pack("<BBII", FileTransferService.READ, FileTransferService.ERR, 0, 0)
                 write_packets(error_response)
                 continue
 
@@ -109,15 +109,15 @@ while True:
             while contents_sent < len(contents):
                 remaining = len(contents) - contents_sent
                 next_amount = min(remaining, free_space)
-                header = struct.pack(">BBII", FileTransferService.READ, FileTransferService.OK, len(contents), next_amount)
+                header = struct.pack("<BBII", FileTransferService.READ, FileTransferService.OK, len(contents), next_amount)
                 write_packets(header + contents[contents_sent:contents_sent + next_amount])
                 contents_sent += next_amount
 
-                read = read_packets(packet_buffer, target_size=struct.calcsize(">BBI"))
-                confirm, status, free_space = struct.unpack_from(">BBI", p)
+                read = read_packets(packet_buffer, target_size=struct.calcsize("<BBI"))
+                confirm, status, free_space = struct.unpack_from("<BBI", p)
         elif command == adafruit_ble_file_transfer.FileTransferService.MKDIR:
-            path_length = struct.unpack_from(">H", p, offset=1)[0]
-            path_start = struct.calcsize(">BH")
+            path_length = struct.unpack_from("<H", p, offset=1)[0]
+            path_start = struct.calcsize("<BH")
             path = read_complete_path(p[path_start:], path_length)
             pieces = path.split("/")
             parent = stored_data
@@ -133,20 +133,20 @@ while True:
                 i += 1
             
             if ok:
-                header = struct.pack(">BB", FileTransferService.WRITE, FileTransferService.OK)
+                header = struct.pack("<BB", FileTransferService.WRITE, FileTransferService.OK)
             else:
-                header = struct.pack(">BB", FileTransferService.WRITE, FileTransferService.ERR)
+                header = struct.pack("<BB", FileTransferService.WRITE, FileTransferService.ERR)
             write_packets(header)
         elif command == adafruit_ble_file_transfer.FileTransferService.LISTDIR:
-            path_length = struct.unpack_from(">H", p, offset=1)[0]
-            path_start = struct.calcsize(">BH")
+            path_length = struct.unpack_from("<H", p, offset=1)[0]
+            path_start = struct.calcsize("<BH")
             path = read_complete_path(p[path_start:], path_length)
 
             # cmd, status, i, total, flags, file_size, path_length = struct.unpack(">BBIIBIH", b)
 
             d = find_dir(path)
             if d is None:
-                error = struct.pack(">BBIIBIH", FileTransferService.WRITE, FileTransferService.ERR, 0, 0, 0, 0, 0)
+                error = struct.pack("<BBIIBIH", FileTransferService.WRITE, FileTransferService.ERR, 0, 0, 0, 0, 0)
                 write_packets(error)
 
             filenames = sorted(d.keys())
@@ -159,21 +159,21 @@ while True:
                     flags = FileTransferService.DIRECTORY
                 else:
                     content_length = len(contents)
-                header = struct.pack(">BBIIBIH", FileTransferService.WRITE, FileTransferService.OK, i, total_files, flags, content_length, len(encoded_filename))
+                header = struct.pack("<BBIIBIH", FileTransferService.WRITE, FileTransferService.OK, i, total_files, flags, content_length, len(encoded_filename))
                 packet = header + encoded_filename
                 write_packets(packet)
 
-            header = struct.pack(">BBIIBIH", FileTransferService.WRITE, FileTransferService.OK, total_files, total_files, 0, 0, 0)
+            header = struct.pack("<BBIIBIH", FileTransferService.WRITE, FileTransferService.OK, total_files, total_files, 0, 0, 0)
             write_packets(header)
         elif command == adafruit_ble_file_transfer.FileTransferService.DELETE:
-            path_length = struct.unpack_from(">H", p, offset=1)[0]
-            path_start = struct.calcsize(">BH")
+            path_length = struct.unpack_from("<H", p, offset=1)[0]
+            path_start = struct.calcsize("<BH")
             path = read_complete_path(p[path_start:], path_length)
             d = find_dir(path)
             filename = path.split("/")[-1]
             if not filename and d:
                 print("trying to delete directory with contents")
-                error_response = struct.pack(">BB", FileTransferService.WRITE, FileTransferService.ERR)
+                error_response = struct.pack("<BB", FileTransferService.WRITE, FileTransferService.ERR)
                 write_packets(error_response)
                 continue
 
@@ -185,14 +185,14 @@ while True:
 
             if filename not in d:
                 print("missing path")
-                error_response = struct.pack(">BB", FileTransferService.WRITE, FileTransferService.ERR)
+                error_response = struct.pack("<BB", FileTransferService.WRITE, FileTransferService.ERR)
                 write_packets(error_response)
                 continue
             ok = True
 
             del d[filename]
             
-            header = struct.pack(">BB", FileTransferService.WRITE, FileTransferService.OK)
+            header = struct.pack("<BB", FileTransferService.WRITE, FileTransferService.OK)
             write_packets(header)
         else:
             print("unknown command", command)

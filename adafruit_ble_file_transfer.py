@@ -134,63 +134,63 @@ class FileTransferClient:
     def read(self, path):
         path = path.encode("utf-8")
         chunk_size = 10
-        encoded = struct.pack(">BIH", FileTransferService.READ, chunk_size, len(path)) + path
+        encoded = struct.pack("<BIH", FileTransferService.READ, chunk_size, len(path)) + path
         r = self._write(encoded)
-        b = bytearray(struct.calcsize(">BBII") + chunk_size)
+        b = bytearray(struct.calcsize("<BBII") + chunk_size)
         contents_read = 0
         content_length = None
         buf = None
         while content_length is None or contents_read < content_length:
             read = self._readinto(b)
-            cmd, status, content_length, chunk_length = struct.unpack_from(">BBII", b)
+            cmd, status, content_length, chunk_length = struct.unpack_from("<BBII", b)
             if status != FileTransferService.OK:
                 raise ValueError("Missing file")
             if buf is None:
                 buf = bytearray(content_length)
-            header_size = struct.calcsize(">BBII")
+            header_size = struct.calcsize("<BBII")
             buf[contents_read:contents_read + (read - header_size)] = b[header_size:read]
             contents_read += read - header_size
             chunk_size = min(10, content_length - contents_read)
-            encoded = struct.pack(">BBI", FileTransferService.READ, FileTransferService.OK, chunk_size)
+            encoded = struct.pack("<BBI", FileTransferService.READ, FileTransferService.OK, chunk_size)
             r = self._service.raw.write(encoded)
         return buf
     
     def write(self, path, contents):
         path = path.encode("utf-8")
-        encoded = struct.pack(">BIH", FileTransferService.WRITE, len(contents), len(path)) + path
+        encoded = struct.pack("<BIH", FileTransferService.WRITE, len(contents), len(path)) + path
         r = self._write(encoded)
-        b = bytearray(struct.calcsize(">BBI"))
+        b = bytearray(struct.calcsize("<BBI"))
         written = 0
         while written < len(contents):
             read = self._readinto(b)
-            cmd, status, free_space = struct.unpack(">BBI", b)
+            cmd, status, free_space = struct.unpack("<BBI", b)
             self._service.raw.write(contents[written:written+free_space])
             written += free_space
 
     def mkdir(self, path):
         path = path.encode("utf-8")
-        encoded = struct.pack(">BH", FileTransferService.MKDIR, len(path)) + path
+        encoded = struct.pack("<BH", FileTransferService.MKDIR, len(path)) + path
         r = self._write(encoded)
 
-        b = bytearray(struct.calcsize(">BB"))
+        b = bytearray(struct.calcsize("<BB"))
         read = self._readinto(b)
-        cmd, status = struct.unpack(">BB", b)
+        cmd, status = struct.unpack("<BB", b)
 
     def listdir(self, path):
         paths = []
         path = path.encode("utf-8")
         chunk_size = 10
-        encoded = struct.pack(">BH", FileTransferService.LISTDIR, len(path)) + path
+        encoded = struct.pack("<BH", FileTransferService.LISTDIR, len(path)) + path
         r = self._write(encoded)
         b = bytearray(self._service.raw.incoming_packet_length)
         i = 0
         total = 10 # starting value that will be replaced by the first response
-        header_size = struct.calcsize(">BBIIBIH")
+        header_size = struct.calcsize("<BBIIBIH")
         while i < total:
             read = self._readinto(b)
             offset = 0
             while offset < read:
-                cmd, status, i, total, flags, file_size, path_length = struct.unpack_from(">BBIIBIH", b, offset=offset)
+                cmd, status, i, total, flags, file_size, path_length = struct.unpack_from("<BBIIBIH", b, offset=offset)
                 if i >= total:
                     break
                 path = str(b[offset + header_size:offset+header_size + path_length], "utf-8")
@@ -200,11 +200,11 @@ class FileTransferClient:
 
     def delete(self, path):
         path = path.encode("utf-8")
-        encoded = struct.pack(">BH", FileTransferService.DELETE, len(path)) + path
+        encoded = struct.pack("<BH", FileTransferService.DELETE, len(path)) + path
         r = self._write(encoded)
 
-        b = bytearray(struct.calcsize(">BB"))
+        b = bytearray(struct.calcsize("<BB"))
         read = self._readinto(b)
-        cmd, status = struct.unpack(">BB", b)
+        cmd, status = struct.unpack("<BB", b)
         if status != FileTransferService.OK:
             raise ValueError("Missing file")
