@@ -71,7 +71,7 @@ To install in a virtual environment in your current project:
 Usage Examples
 ==============
 
-See `examples/ble_file_transfer_simpletest.py` for a client example. A stub server implementation is in `examples/ble_file_transfer_simpletest.py`.
+See `examples/ble_file_transfer_simpletest.py` for a client example. A stub server implementation is in `examples/ble_file_transfer_stub_server.py`.
 
 Protocol
 =========
