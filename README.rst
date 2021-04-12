@@ -88,7 +88,7 @@ The base UUID used in characteristics is `ADAFxxxx-4669-6C65-5472-616E73666572`.
 The service has two characteristics:
 
 * version (`0x0100`) - Simple unsigned 32-bit integer version number. Always 1.
-* raw transfer (`0x0200`) - Bidirectional link with a custom protocol. The client does WRITE_NO_RESPONSE to the characteristic and then server replies via NOTIFY. (This is similar to the Nordic UART Service but on a single characteristic rather than two.) The commands over the transfer characteristic are idepotent and stateless. A disconnect during a command will reset the state.
+* raw transfer (`0x0200`) - Bidirectional link with a custom protocol. The client does WRITE_NO_RESPONSE to the characteristic and then server replies via NOTIFY. (This is similar to the Nordic UART Service but on a single characteristic rather than two.) The commands over the transfer characteristic are idempotent and stateless. A disconnect during a command will reset the state.
 
 Commands
 ---------
@@ -161,7 +161,7 @@ The header is two fixed entries and a variable length path:
 
 The server will reply with:
 * Command: Single byte. Always `0x03`.
-* Status: Single byte. `0x81` if the file or directory was deleted or `0x82` if the path is a non-empty directory or non-existant.
+* Status: Single byte. `0x81` if the file or directory was deleted or `0x82` if the path is a non-empty directory or non-existent.
 
 `0x04` - Make a directory
 +++++++++++++++++++++++++
@@ -197,7 +197,7 @@ The server will reply with n+1 entries for a directory with n files:
 * Flags: 8-bit number encoding data about the entries per-bit. Bit
   * Bit 0: Set when the entry is a directory
   * Bits 1-7: Reserved
-* File size: 32-bit number encoding the size of the file. 0 for directories.
+* File size: 32-bit number encoding the size of the file. Ignore for directories. Value may change.
 * Path length: 16-bit number encoding the encoded length of the path string.
 * Path: UTF-8 encoded string that is *not* null terminated. (We send the length instead.) These paths are relative so they won't contain `/` at all.
 
