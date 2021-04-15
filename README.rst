@@ -110,8 +110,8 @@ Given a full path, returns the full contents of the file.
 The header is four fixed entries and a variable length path:
 
 * Command: Single byte. Always `0x10`.
-* Chunk size: 32-bit number encoding the amount of data that the client can handle in the first reply.
 * Chunk offset: 32-bit number encoding the offset into the file to start the first chunk.
+* Chunk size: 32-bit number encoding the amount of data that the client can handle in the first reply.
 * Path length: 16-bit number encoding the encoded length of the path string.
 * Path: UTF-8 encoded string that is *not* null terminated. (We send the length instead.)
 
@@ -126,8 +126,8 @@ The server will respond with:
 If the chunk length is smaller than the total length, then the client will request more data by sending:
 * Command: Single byte. Always `0x12`.
 * Status: Single byte. Always OK for now.
-* Chunk size: 32-bit number encoding the number of bytes to read. May be different than the original size. Does not need to be limited by the total size.
 * Chunk offset: 32-bit number encoding the offset into the file to start the next chunk.
+* Chunk size: 32-bit number encoding the number of bytes to read. May be different than the original size. Does not need to be limited by the total size.
 
 The transaction is complete after the server has replied with all data. (No acknowledgement needed from the client.)
 
@@ -135,6 +135,8 @@ The transaction is complete after the server has replied with all data. (No ackn
 +++++++++++++++++++++
 
 Writes the content to the given full path. If the file exists, it will be overwritten. Content may be written as received so an interrupted transfer may lead to a truncated file.
+
+Offset larger than the existing file size will introduce zeros into the gap.
 
 The header is four fixed entries and a variable length path:
 
@@ -157,7 +159,7 @@ The client will repeatedly respond until the total length has been transferred w
 * Data size: 32-bit number encoding the amount of data the client is sending.
 * Data
 
-The transaction is complete after the server has received all data.
+The transaction is complete after the server has received all data and replied with a status with 0 free space and offset set to the content length.
 
 
 `0x30` - Delete a file or directory
@@ -206,7 +208,7 @@ The server will reply with n+1 entries for a directory with n files:
 * Status: Single byte. `0x01` if the directory exists or `0x02` if it doesn't.
 * Entry number: 32-bit number encoding the entry number.
 * Total entries: 32-bit number encoding the total number of entries.
-* Flags: 8-bit number encoding data about the entries per-bit. Bit
+* Flags: 32-bit number encoding data about the entries.
   * Bit 0: Set when the entry is a directory
   * Bits 1-7: Reserved
 * File size: 32-bit number encoding the size of the file. Ignore for directories. Value may change.
