@@ -98,10 +98,10 @@ while True:
         p = packet_buffer[:read]
         command = struct.unpack_from("<B", p)[0]
         if command == FileTransferService.WRITE:
-            start_offset, content_length, path_length = struct.unpack_from(
-                "<IIH", p, offset=1
+            path_length, start_offset, content_length = struct.unpack_from(
+                "<xHII", p, offset=1
             )
-            path_start = struct.calcsize("<BIIH")
+            path_start = struct.calcsize("<BxHII")
             path = read_complete_path(p[path_start:], path_length)
 
             d = find_dir(path)
@@ -118,14 +118,14 @@ while True:
                 contents = d[filename]
             d[filename] = contents
             contents_read = start_offset
-            write_data_header_size = struct.calcsize("<BBII")
+            write_data_header_size = struct.calcsize("<BBxxII")
             data_size = 0
             ok = True
 
             while contents_read < content_length and ok:
                 next_amount = min(CHUNK_SIZE, content_length - contents_read)
                 header = struct.pack(
-                    "<BBII",
+                    "<BBxxII",
                     FileTransferService.WRITE_PACING,
                     FileTransferService.OK,
                     contents_read,
@@ -136,7 +136,7 @@ while True:
                     packet_buffer, target_size=next_amount + write_data_header_size
                 )
                 cmd, status, offset, data_size = struct.unpack_from(
-                    "<BBII", packet_buffer
+                    "<BBxxII", packet_buffer
                 )
                 if status != FileTransferService.OK:
                     print("bad status, resetting")
@@ -144,7 +144,7 @@ while True:
                 if cmd != FileTransferService.WRITE_DATA:
                     write_packets(
                         struct.pack(
-                            "<BBII",
+                            "<BBxxII",
                             FileTransferService.WRITE_PACING,
                             FileTransferService.ERROR_PROTOCOL,
                             0,
@@ -163,7 +163,7 @@ while True:
 
             write_packets(
                 struct.pack(
-                    "<BBII",
+                    "<BBxxII",
                     FileTransferService.WRITE_PACING,
                     FileTransferService.OK,
                     content_length,
@@ -171,15 +171,15 @@ while True:
                 )
             )
         elif command == adafruit_ble_file_transfer.FileTransferService.READ:
-            offset, free_space, path_length = struct.unpack_from("<IIH", p, offset=1)
-            path_start = struct.calcsize("<BIIH")
+            path_length, offset, free_space = struct.unpack_from("<xHII", p, offset=1)
+            path_start = struct.calcsize("<BxHII")
             path = read_complete_path(p[path_start:], path_length)
             d = find_dir(path)
             filename = path.split("/")[-1]
             if filename not in d:
                 print("missing path")
                 error_response = struct.pack(
-                    "<BBIII",
+                    "<BBxxIII",
                     FileTransferService.READ_DATA,
                     FileTransferService.ERR,
                     0,
@@ -195,7 +195,7 @@ while True:
                 remaining = len(contents) - contents_sent
                 next_amount = min(remaining, free_space)
                 header = struct.pack(
-                    "<BBIII",
+                    "<BBxxIII",
                     FileTransferService.READ_DATA,
                     FileTransferService.OK,
                     contents_sent,
@@ -210,14 +210,16 @@ while True:
                 if contents_sent == len(contents):
                     break
 
-                read = read_packets(packet_buffer, target_size=struct.calcsize("<BBII"))
+                read = read_packets(
+                    packet_buffer, target_size=struct.calcsize("<BBxxII")
+                )
                 cmd, status, offset, free_space = struct.unpack_from(
-                    "<BBII", packet_buffer
+                    "<BBxxII", packet_buffer
                 )
                 if cmd != FileTransferService.READ_PACING:
                     write_packets(
                         struct.pack(
-                            "<BBIII",
+                            "<BBxxIII",
                             FileTransferService.READ_DATA,
                             FileTransferService.ERROR_PROTOCOL,
                             0,
@@ -230,7 +232,7 @@ while True:
                 if offset != contents_sent:
                     write_packets(
                         struct.pack(
-                            "<BBIII",
+                            "<BBxxIII",
                             FileTransferService.READ_DATA,
                             FileTransferService.ERROR_PROTOCOL,
                             0,
@@ -241,8 +243,8 @@ while True:
                     print("mismatched offset")
                     break
         elif command == adafruit_ble_file_transfer.FileTransferService.MKDIR:
-            path_length = struct.unpack_from("<H", p, offset=1)[0]
-            path_start = struct.calcsize("<BH")
+            path_length = struct.unpack_from("<xH", p, offset=1)[0]
+            path_start = struct.calcsize("<BxH")
             path = read_complete_path(p[path_start:], path_length)
             pieces = path.split("/")
             parent = stored_data
@@ -267,8 +269,8 @@ while True:
                 )
             write_packets(header)
         elif command == adafruit_ble_file_transfer.FileTransferService.LISTDIR:
-            path_length = struct.unpack_from("<H", p, offset=1)[0]
-            path_start = struct.calcsize("<BH")
+            path_length = struct.unpack_from("<xH", p, offset=1)[0]
+            path_start = struct.calcsize("<BxH")
             path = read_complete_path(p[path_start:], path_length)
 
             # cmd, status, i, total, flags, file_size, path_length = struct.unpack("<BBIIBIH", b)
@@ -276,7 +278,7 @@ while True:
             d = find_dir(path)
             if d is None:
                 error = struct.pack(
-                    "<BBIIIIH",
+                    "<BBHIIII",
                     FileTransferService.LISTDIR_ENTRY,
                     FileTransferService.ERROR,
                     0,
@@ -298,32 +300,32 @@ while True:
                 else:
                     content_length = len(contents)
                 header = struct.pack(
-                    "<BBIIIIH",
+                    "<BBHIIII",
                     FileTransferService.LISTDIR_ENTRY,
                     FileTransferService.OK,
+                    len(encoded_filename),
                     i,
                     total_files,
                     flags,
                     content_length,
-                    len(encoded_filename),
                 )
                 packet = header + encoded_filename
                 write_packets(packet)
 
             header = struct.pack(
-                "<BBIIIIH",
+                "<BBHIIII",
                 FileTransferService.LISTDIR_ENTRY,
                 FileTransferService.OK,
-                total_files,
-                total_files,
                 0,
+                total_files,
+                total_files,
                 0,
                 0,
             )
             write_packets(header)
         elif command == adafruit_ble_file_transfer.FileTransferService.DELETE:
-            path_length = struct.unpack_from("<H", p, offset=1)[0]
-            path_start = struct.calcsize("<BH")
+            path_length = struct.unpack_from("<xH", p, offset=1)[0]
+            path_start = struct.calcsize("<BxH")
             path = read_complete_path(p[path_start:], path_length)
             d = find_dir(path)
             filename = path.split("/")[-1]

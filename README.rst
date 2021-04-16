@@ -100,6 +100,8 @@ must end with `/` when provided as a full path.
 
 All numbers are unsigned.
 
+All values are aligned with respect to the start of the packet.
+
 Status bytes are `0x01` for OK and `0x02` for error. Other values for error may be used for specific commands.
 
 `0x10` - Read a file
@@ -110,14 +112,16 @@ Given a full path, returns the full contents of the file.
 The header is four fixed entries and a variable length path:
 
 * Command: Single byte. Always `0x10`.
+* 1 Byte reserved for padding.
+* Path length: 16-bit number encoding the encoded length of the path string.
 * Chunk offset: 32-bit number encoding the offset into the file to start the first chunk.
 * Chunk size: 32-bit number encoding the amount of data that the client can handle in the first reply.
-* Path length: 16-bit number encoding the encoded length of the path string.
 * Path: UTF-8 encoded string that is *not* null terminated. (We send the length instead.)
 
 The server will respond with:
 * Command: Single byte. Always `0x11`.
 * Status: Single byte.
+* 2 Bytes reserved for padding.
 * Chunk offset: 32-bit number encoding the offset into the file of this chunk.
 * Total length: 32-bit number encoding the total file length.
 * Chunk length: 32-bit number encoding the length of the read data up to the chunk size provided in the header.
@@ -126,6 +130,7 @@ The server will respond with:
 If the chunk length is smaller than the total length, then the client will request more data by sending:
 * Command: Single byte. Always `0x12`.
 * Status: Single byte. Always OK for now.
+* 2 Bytes reserved for padding.
 * Chunk offset: 32-bit number encoding the offset into the file to start the next chunk.
 * Chunk size: 32-bit number encoding the number of bytes to read. May be different than the original size. Does not need to be limited by the total size.
 
@@ -141,20 +146,23 @@ Offset larger than the existing file size will introduce zeros into the gap.
 The header is four fixed entries and a variable length path:
 
 * Command: Single byte. Always `0x20`.
+* 1 Byte reserved for padding.
+* Path length: 16-bit number encoding the encoded length of the path string.
 * Offset: 32-bit number encoding the starting offset to write.
 * Total size: 32-bit number encoding the total length of the file contents.
-* Path length: 16-bit number encoding the encoded length of the path string.
 * Path: UTF-8 encoded string that is *not* null terminated. (We send the length instead.)
 
 The server will repeatedly respond until the total length has been transferred with:
 * Command: Single byte. Always `0x21`.
 * Status: Single byte. `0x01` if OK. `0x02` if any parent directory is missing or a file.
+* 2 Bytes reserved for padding.
 * Offset: 32-bit number encoding the starting offset to write. (Should match the offset from the previous 0x20 or 0x22 message)
 * Free space: 32-bit number encoding the amount of data the client can send.
 
 The client will repeatedly respond until the total length has been transferred with:
 * Command: Single byte. Always `0x22`.
 * Status: Single byte. Always `0x01` for OK.
+* 2 Bytes reserved for padding.
 * Offset: 32-bit number encoding the offset to write.
 * Data size: 32-bit number encoding the amount of data the client is sending.
 * Data
@@ -170,6 +178,7 @@ Deletes the file or directory at the given full path. Directories must be empty 
 The header is two fixed entries and a variable length path:
 
 * Command: Single byte. Always `0x30`.
+* 1 Byte reserved for padding.
 * Path length: 16-bit number encoding the encoded length of the path string.
 * Path: UTF-8 encoded string that is *not* null terminated. (We send the length instead.)
 
@@ -185,6 +194,7 @@ Creates a new directory at the given full path. If a parent directory does not e
 The header is two fixed entries and a variable length path:
 
 * Command: Single byte. Always `0x40`.
+* 1 Byte reserved for padding.
 * Path length: 16-bit number encoding the encoded length of the path string.
 * Path: UTF-8 encoded string that is *not* null terminated. (We send the length instead.)
 
@@ -200,19 +210,20 @@ Lists all of the contents in a directory given a full path. Returned paths are *
 The header is two fixed entries and a variable length path:
 
 * Command: Single byte. Always `0x50`.
+* 1 Byte reserved for padding.
 * Path length: 16-bit number encoding the encoded length of the path string.
 * Path: UTF-8 encoded string that is *not* null terminated. (We send the length instead.)
 
 The server will reply with n+1 entries for a directory with n files:
 * Command: Single byte. Always `0x51`.
 * Status: Single byte. `0x01` if the directory exists or `0x02` if it doesn't.
+* Path length: 16-bit number encoding the encoded length of the path string.
 * Entry number: 32-bit number encoding the entry number.
 * Total entries: 32-bit number encoding the total number of entries.
 * Flags: 32-bit number encoding data about the entries.
-  * Bit 0: Set when the entry is a directory
-  * Bits 1-7: Reserved
+  - Bit 0: Set when the entry is a directory
+  - Bits 1-7: Reserved
 * File size: 32-bit number encoding the size of the file. Ignore for directories. Value may change.
-* Path length: 16-bit number encoding the encoded length of the path string.
 * Path: UTF-8 encoded string that is *not* null terminated. (We send the length instead.) These paths are relative so they won't contain `/` at all.
 
 The transaction is complete when the final entry is sent from the server. It will have entry number == total entries and zeros for flags, file size and path length.

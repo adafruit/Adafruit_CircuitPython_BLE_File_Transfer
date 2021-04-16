@@ -34,7 +34,6 @@ ble = BLERadio()
 while True:
     try:
         while ble.connected:
-            print("connnnnneeeected")
             for connection in ble.connections:
                 print(
                     "services", connection._bleio_connection.discover_remote_services()
@@ -44,11 +43,9 @@ while True:
                 if not connection.paired:
                     print("pairing")
                     connection.pair()
-                print("connecteeeeeddd")
                 service = connection[adafruit_ble_file_transfer.FileTransferService]
                 client = adafruit_ble_file_transfer.FileTransferClient(service)
                 _write(client, "/hello.txt", "Hello world".encode("utf-8"))
-                print("write sent")
                 c = _read(client, "/hello.txt")
                 print(len(c), c)
                 client.mkdir("/world/")
