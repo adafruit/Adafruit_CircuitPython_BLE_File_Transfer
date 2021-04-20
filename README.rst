@@ -119,6 +119,7 @@ The header is four fixed entries and a variable length path:
 * Path: UTF-8 encoded string that is *not* null terminated. (We send the length instead.)
 
 The server will respond with:
+
 * Command: Single byte. Always ``0x11``.
 * Status: Single byte.
 * 2 Bytes reserved for padding.
@@ -128,6 +129,7 @@ The server will respond with:
 * Chunk-length contents of the file starting from the current position.
 
 If the chunk length is smaller than the total length, then the client will request more data by sending:
+
 * Command: Single byte. Always ``0x12``.
 * Status: Single byte. Always OK for now.
 * 2 Bytes reserved for padding.
@@ -153,6 +155,7 @@ The header is four fixed entries and a variable length path:
 * Path: UTF-8 encoded string that is *not* null terminated. (We send the length instead.)
 
 The server will repeatedly respond until the total length has been transferred with:
+
 * Command: Single byte. Always ``0x21``.
 * Status: Single byte. ``0x01`` if OK. ``0x02`` if any parent directory is missing or a file.
 * 2 Bytes reserved for padding.
@@ -160,6 +163,7 @@ The server will repeatedly respond until the total length has been transferred w
 * Free space: 32-bit number encoding the amount of data the client can send.
 
 The client will repeatedly respond until the total length has been transferred with:
+
 * Command: Single byte. Always ``0x22``.
 * Status: Single byte. Always ``0x01`` for OK.
 * 2 Bytes reserved for padding.
@@ -183,6 +187,7 @@ The header is two fixed entries and a variable length path:
 * Path: UTF-8 encoded string that is *not* null terminated. (We send the length instead.)
 
 The server will reply with:
+
 * Command: Single byte. Always ``0x31``.
 * Status: Single byte. ``0x01`` if the file or directory was deleted or ``0x02`` if the path is a non-empty directory or non-existent.
 
@@ -199,6 +204,7 @@ The header is two fixed entries and a variable length path:
 * Path: UTF-8 encoded string that is *not* null terminated. (We send the length instead.)
 
 The server will reply with:
+
 * Command: Single byte. Always ``0x41``.
 * Status: Single byte. ``0x01`` if the directory(s) were created or ``0x02`` if any parent of the path is an existing file.
 
@@ -215,6 +221,7 @@ The header is two fixed entries and a variable length path:
 * Path: UTF-8 encoded string that is *not* null terminated. (We send the length instead.)
 
 The server will reply with n+1 entries for a directory with n files:
+
 * Command: Single byte. Always ``0x51``.
 * Status: Single byte. ``0x01`` if the directory exists or ``0x02`` if it doesn't.
 * Path length: 16-bit number encoding the encoded length of the path string.
