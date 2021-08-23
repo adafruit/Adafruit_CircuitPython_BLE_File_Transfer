@@ -13,6 +13,7 @@ Simple BLE Service for reading and writing files over BLE
 """
 
 import struct
+import time
 import _bleio
 
 from adafruit_ble.attributes import Attribute
@@ -75,7 +76,7 @@ class FileTransferService(Service):
     # pylint: disable=too-few-public-methods
 
     uuid = StandardUUID(0xFEBB)
-    version = Uint32Characteristic(uuid=FileTransferUUID(0x0100))
+    version = Uint32Characteristic(uuid=FileTransferUUID(0x0100), initial_value=4)
     raw = _TransferCharacteristic()
     # _raw gets shadowed for each MIDIService instance by a PacketBuffer. PyLint doesn't know this
     # so it complains about missing members.
@@ -95,6 +96,8 @@ class FileTransferService(Service):
     MKDIR_STATUS = 0x41
     LISTDIR = 0x50
     LISTDIR_ENTRY = 0x51
+    MOVE = 0x60
+    MOVE_STATUS = 0x61
 
     # Responses
     # 0x00 is INVALID
@@ -117,6 +120,9 @@ class FileTransferClient:
     def __init__(self, service):
         self._service = service
 
+        if service.version != 4:
+            raise RuntimeError("Service on other device too old")
+
     def _write(self, buffer):
         # print("write", binascii.hexlify(buffer))
         sent = 0
@@ -135,7 +141,7 @@ class FileTransferClient:
                 read = self._service.raw.readinto(buffer)
             except ValueError:
                 read = self._service.raw.readinto(long_buffer)
-        buffer[:read] = long_buffer[:read]
+                buffer[:read] = long_buffer[:read]
         return read
 
     def read(self, path, *, offset=0):
@@ -204,24 +210,32 @@ class FileTransferClient:
             self._write(encoded)
         return buf
 
-    def write(self, path, contents, *, offset=0):
+    def write(self, path, contents, *, offset=0, modification_time=None):
         """Writes the given contents to the given path starting at the given offset.
+        Returns the trunctated modification time.
 
         If the file is shorter than the offset, zeros will be added in the gap."""
         path = path.encode("utf-8")
         total_length = len(contents) + offset
+        if modification_time is None:
+            modification_time = int(time.time() * 1_000_000_000)
         encoded = (
             struct.pack(
-                "<BxHII", FileTransferService.WRITE, len(path), offset, total_length
+                "<BxHIIQ",
+                FileTransferService.WRITE,
+                len(path),
+                offset,
+                total_length,
+                modification_time,
             )
             + path
         )
         self._write(encoded)
-        b = bytearray(struct.calcsize("<BBxxII"))
+        b = bytearray(struct.calcsize("<BBxxIIQ"))
         written = 0
         while written < len(contents):
             self._readinto(b)
-            cmd, status, current_offset, free_space = struct.unpack("<BBxxII", b)
+            cmd, status, current_offset, free_space, _ = struct.unpack("<BBxxIIQ", b)
             if status != FileTransferService.OK:
                 print("write error", status)
                 raise RuntimeError()
@@ -254,23 +268,32 @@ class FileTransferClient:
 
         # Wait for confirmation that everything was written ok.
         self._readinto(b)
-        cmd, status, offset, free_space = struct.unpack("<BBxxII", b)
+        cmd, status, offset, free_space, truncated_time = struct.unpack("<BBxxIIQ", b)
         if cmd != FileTransferService.WRITE_PACING or offset != total_length:
             raise ProtocolError()
+        return truncated_time
 
-    def mkdir(self, path):
-        """Makes the directory and any missing parents"""
+    def mkdir(self, path, modification_time=None):
+        """Makes the directory and any missing parents. Returns the truncated time"""
         path = path.encode("utf-8")
-        encoded = struct.pack("<BxH", FileTransferService.MKDIR, len(path)) + path
+        if modification_time is None:
+            modification_time = int(time.time() * 1_000_000_000)
+        encoded = (
+            struct.pack(
+                "<BxHQ", FileTransferService.MKDIR, len(path), modification_time
+            )
+            + path
+        )
         self._write(encoded)
 
-        b = bytearray(struct.calcsize("<BB"))
+        b = bytearray(struct.calcsize("<BBxxQ"))
         self._readinto(b)
-        cmd, status = struct.unpack("<BB", b)
+        cmd, status, truncated_time = struct.unpack("<BBxxQ", b)
         if cmd != FileTransferService.MKDIR_STATUS:
             raise ProtocolError()
         if status != FileTransferService.OK:
             raise ValueError("Invalid path")
+        return truncated_time
 
     def listdir(self, path):
         """Returns a list of tuples, one tuple for each file or directory in the given path"""
@@ -282,14 +305,15 @@ class FileTransferClient:
         b = bytearray(self._service.raw.incoming_packet_length)
         i = 0
         total = 10  # starting value that will be replaced by the first response
-        header_size = struct.calcsize("<BBHIIII")
+        header_size = struct.calcsize("<BBHIIIIQ")
         path_length = 0
         encoded_path = b""
+        file_size = 0
+        flags = 0
+        modification_time = 0
         while i < total:
             read = self._readinto(b)
             offset = 0
-            file_size = 0
-            flags = 0
             while offset < read:
                 if len(encoded_path) == path_length:
                     if path_length > 0:
@@ -297,7 +321,7 @@ class FileTransferClient:
                             encoded_path,
                             "utf-8",
                         )
-                        paths.append((path, file_size, flags))
+                        paths.append((path, file_size, flags, modification_time))
                     (
                         cmd,
                         status,
@@ -306,7 +330,8 @@ class FileTransferClient:
                         total,
                         flags,
                         file_size,
-                    ) = struct.unpack_from("<BBHIIII", b, offset=offset)
+                        modification_time,
+                    ) = struct.unpack_from("<BBHIIIIQ", b, offset=offset)
                     offset += header_size
                     encoded_path = b""
                     if cmd != FileTransferService.LISTDIR_ENTRY:
@@ -322,7 +347,7 @@ class FileTransferClient:
         return paths
 
     def delete(self, path):
-        """Deletes the file or directory at the given path. Directories must be empty."""
+        """Deletes the file or directory at the given path."""
         path = path.encode("utf-8")
         encoded = struct.pack("<BxH", FileTransferService.DELETE, len(path)) + path
         self._write(encoded)
@@ -331,6 +356,26 @@ class FileTransferClient:
         self._readinto(b)
         cmd, status = struct.unpack("<BB", b)
         if cmd != FileTransferService.DELETE_STATUS:
+            raise ProtocolError()
+        if status != FileTransferService.OK:
+            raise ValueError("Missing file")
+
+    def move(self, old_path, new_path):
+        """Moves the file or directory from old_path to new_path."""
+        old_path = old_path.encode("utf-8")
+        new_path = new_path.encode("utf-8")
+        encoded = (
+            struct.pack("<BxHH", FileTransferService.MOVE, len(old_path), len(new_path))
+            + old_path
+            + b" "
+            + new_path
+        )
+        self._write(encoded)
+
+        b = bytearray(struct.calcsize("<BB"))
+        self._readinto(b)
+        cmd, status = struct.unpack("<BB", b)
+        if cmd != FileTransferService.MOVE_STATUS:
             raise ProtocolError()
         if status != FileTransferService.OK:
             raise ValueError("Missing file")
