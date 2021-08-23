@@ -87,7 +87,7 @@ The base UUID used in characteristics is ``ADAFxxxx-4669-6C65-5472-616E73666572`
 
 The service has two characteristics:
 
-* version (``0x0100``) - Simple unsigned 32-bit integer version number. Always 1.
+* version (``0x0100``) - Simple unsigned 32-bit integer version number. May be 1 or 2.
 * raw transfer (``0x0200``) - Bidirectional link with a custom protocol. The client does WRITE_NO_RESPONSE to the characteristic and then server replies via NOTIFY. (This is similar to the Nordic UART Service but on a single characteristic rather than two.) The commands over the transfer characteristic are idempotent and stateless. A disconnect during a command will reset the state.
 
 Commands
@@ -150,6 +150,7 @@ The header is four fixed entries and a variable length path:
 * Path length: 16-bit number encoding the encoded length of the path string.
 * Offset: 32-bit number encoding the starting offset to write.
 * Total size: 32-bit number encoding the total length of the file contents.
+* Current time: 64-bit number encoding nanoseconds since January 1st, 1970. Used as the file modification time.
 * Path: UTF-8 encoded string that is *not* null terminated. (We send the length instead.)
 
 The server will repeatedly respond until the total length has been transferred with:
@@ -169,11 +170,12 @@ The client will repeatedly respond until the total length has been transferred w
 
 The transaction is complete after the server has received all data and replied with a status with 0 free space and offset set to the content length.
 
+**NOTE**: Current time was added in version 2. The rest of the packets remained the same.
 
 ``0x30`` - Delete a file or directory
 +++++++++++++++++++++++++++++++++++++
 
-Deletes the file or directory at the given full path. Directories must be empty to be deleted.
+Deletes the file or directory at the given full path. Non-empty directories will have their contents deleted as well.
 
 The header is two fixed entries and a variable length path:
 
@@ -184,7 +186,7 @@ The header is two fixed entries and a variable length path:
 
 The server will reply with:
 * Command: Single byte. Always ``0x31``.
-* Status: Single byte. ``0x01`` if the file or directory was deleted or ``0x02`` if the path is a non-empty directory or non-existent.
+* Status: Single byte. ``0x01`` if the file or directory was deleted or ``0x02`` if the path is non-existent.
 
 ``0x40`` - Make a directory
 +++++++++++++++++++++++++++
@@ -226,9 +228,49 @@ The server will reply with n+1 entries for a directory with n files:
   - Bits 1-7: Reserved
 
 * File size: 32-bit number encoding the size of the file. Ignore for directories. Value may change.
+* Modification time: 64-bit number of nanoseconds since January 1st, 1970. *However*, files modifiers may not have an accurate clock so do *not* assume it is correct. Instead, only use it to determine cacheability vs a local copy.
 * Path: UTF-8 encoded string that is *not* null terminated. (We send the length instead.) These paths are relative so they won't contain ``/`` at all.
 
 The transaction is complete when the final entry is sent from the server. It will have entry number == total entries and zeros for flags, file size and path length.
+
+``0x60`` - Move a file or directory
++++++++++++++++++++++++++++++++++++
+
+Moves a file or directory at a given path to a different path. Can be used to
+rename as well. The two paths are sent separately so that they are not limited
+by internal packet buffer sizes differently from other commands.
+
+The header is two fixed entries and a variable length path:
+
+* Command: Single byte. Always ``0x60``.
+* 1 Byte reserved for padding.
+* Old Path length: 16-bit number encoding the encoded length of the path string.
+* Old Path: UTF-8 encoded string that is *not* null terminated. (We send the length instead.)
+
+The server will reply with:
+* Command: Single byte. Always ``0x61``.
+* Status: Single byte. ``0x01`` on success or ``0x02`` if the old path is too long for internal buffers.
+
+* Command: Single byte. Always ``0x62``.
+* 1 Byte reserved for padding.
+* New Path length: 16-bit number encoding the encoded length of the path string.
+* New Path: UTF-8 encoded string that is *not* null terminated. (We send the length instead.)
+
+The server will reply with:
+* Command: Single byte. Always ``0x63``.
+* Status: Single byte. ``0x01`` on success or ``0x02`` on error.
+
+Versions
+=========
+
+Version 2
+---------
+
+* Adds modification time.
+  * Adds current time to file write command.
+  * Adds modification time to directory listing entries.
+* Changes delete to delete non-empty directories automatically.
+* Adds move command.
 
 Contributing
 ============
