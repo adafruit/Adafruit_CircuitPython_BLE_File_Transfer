@@ -150,7 +150,7 @@ The header is four fixed entries and a variable length path:
 * Path length: 16-bit number encoding the encoded length of the path string.
 * Offset: 32-bit number encoding the starting offset to write.
 * Total size: 32-bit number encoding the total length of the file contents.
-* Current time: 64-bit number encoding nanoseconds since January 1st, 1970. Used as the file modification time.
+* Current time: 64-bit number encoding nanoseconds since January 1st, 1970. Used as the file modification time. Not all system will s
 * Path: UTF-8 encoded string that is *not* null terminated. (We send the length instead.)
 
 The server will repeatedly respond until the total length has been transferred with:
@@ -172,6 +172,16 @@ The transaction is complete after the server has received all data and replied w
 
 **NOTE**: Current time was added in version 2. The rest of the packets remained the same.
 
+Time resolution
+~~~~~~~~~~~~~~~
+
+Time resolution varies based filesystem type. FATFS can only get down to the 2 second bound after 1980. Littlefs can do 64-bit nanoseconds after Jan 1, 1970.
+
+What do you want to do?
+* We could either return the stored time when doing a write.
+* We could add file system info command that has the smallest resolution in units of 64-bit nanoseconds. This command could to total filesystem size and free space as well.
+
+
 ``0x30`` - Delete a file or directory
 +++++++++++++++++++++++++++++++++++++
 
@@ -187,6 +197,8 @@ The header is two fixed entries and a variable length path:
 The server will reply with:
 * Command: Single byte. Always ``0x31``.
 * Status: Single byte. ``0x01`` if the file or directory was deleted or ``0x02`` if the path is non-existent.
+
+**NOTE**: In version 2, this command now deletes contents of a directory as well. It won't error.
 
 ``0x40`` - Make a directory
 +++++++++++++++++++++++++++
@@ -239,6 +251,9 @@ The transaction is complete when the final entry is sent from the server. It wil
 Moves a file or directory at a given path to a different path. Can be used to
 rename as well. The two paths are sent separately so that they are not limited
 by internal packet buffer sizes differently from other commands.
+
+**TODO** Maybe we do pack two paths in one packet. That will limit path length
+but prevent any secondary storage internally.
 
 The header is two fixed entries and a variable length path:
 
