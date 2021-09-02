@@ -90,6 +90,15 @@ The service has two characteristics:
 * version (``0x0100``) - Simple unsigned 32-bit integer version number. May be 1 or 2.
 * raw transfer (``0x0200``) - Bidirectional link with a custom protocol. The client does WRITE_NO_RESPONSE to the characteristic and then server replies via NOTIFY. (This is similar to the Nordic UART Service but on a single characteristic rather than two.) The commands over the transfer characteristic are idempotent and stateless. A disconnect during a command will reset the state.
 
+Time resolution
+---------------
+
+Time resolution varies based filesystem type. FATFS can only get down to the 2 second bound after 1980. Littlefs can do 64-bit nanoseconds after January 1st, 1970.
+
+To account for this, the protocol has time in 64-bit nanoseconds after January 1st, 1970. However, the server will respond with a potentially truncated version that is the value stored.
+
+Also note that devices serving the file transfer protocol may not have it's own clock so do not rely on time ordering. Any internal writes may set the time incorrectly. So, we only recommend using the value as a cache key.
+
 Commands
 ---------
 
@@ -150,7 +159,7 @@ The header is four fixed entries and a variable length path:
 * Path length: 16-bit number encoding the encoded length of the path string.
 * Offset: 32-bit number encoding the starting offset to write.
 * Total size: 32-bit number encoding the total length of the file contents.
-* Current time: 64-bit number encoding nanoseconds since January 1st, 1970. Used as the file modification time. Not all system will s
+* Current time: 64-bit number encoding nanoseconds since January 1st, 1970. Used as the file modification time. Not all system will support the full resolution. Use the truncated time response value for caching.
 * Path: UTF-8 encoded string that is *not* null terminated. (We send the length instead.)
 
 The server will repeatedly respond until the total length has been transferred with:
@@ -159,6 +168,7 @@ The server will repeatedly respond until the total length has been transferred w
 * 2 Bytes reserved for padding.
 * Offset: 32-bit number encoding the starting offset to write. (Should match the offset from the previous 0x20 or 0x22 message)
 * Free space: 32-bit number encoding the amount of data the client can send.
+* Truncated time: 64-bit number encoding nanoseconds since January 1st, 1970 as stored by the file system. The resolution may be less that the protocol. It is sent back for use in caching on the host side.
 
 The client will repeatedly respond until the total length has been transferred with:
 * Command: Single byte. Always ``0x22``.
@@ -170,16 +180,7 @@ The client will repeatedly respond until the total length has been transferred w
 
 The transaction is complete after the server has received all data and replied with a status with 0 free space and offset set to the content length.
 
-**NOTE**: Current time was added in version 2. The rest of the packets remained the same.
-
-Time resolution
-~~~~~~~~~~~~~~~
-
-Time resolution varies based filesystem type. FATFS can only get down to the 2 second bound after 1980. Littlefs can do 64-bit nanoseconds after Jan 1, 1970.
-
-What do you want to do?
-* We could either return the stored time when doing a write.
-* We could add file system info command that has the smallest resolution in units of 64-bit nanoseconds. This command could to total filesystem size and free space as well.
+**NOTE**: Current time was added in version 3. The rest of the packets remained the same.
 
 
 ``0x30`` - Delete a file or directory
@@ -210,11 +211,14 @@ The header is two fixed entries and a variable length path:
 * Command: Single byte. Always ``0x40``.
 * 1 Byte reserved for padding.
 * Path length: 16-bit number encoding the encoded length of the path string.
+* Current time: 64-bit number encoding nanoseconds since January 1st, 1970. Used as the file modification time. Not all system will support the full resolution. Use the truncated time response value for caching.
 * Path: UTF-8 encoded string that is *not* null terminated. (We send the length instead.)
 
 The server will reply with:
 * Command: Single byte. Always ``0x41``.
 * Status: Single byte. ``0x01`` if the directory(s) were created or ``0x02`` if any parent of the path is an existing file.
+* 2 Bytes reserved for padding.
+* Truncated time: 64-bit number encoding nanoseconds since January 1st, 1970 as stored by the file system. The resolution may be less that the protocol. It is sent back for use in caching on the host side.
 
 ``0x50`` - List a directory
 +++++++++++++++++++++++++++
@@ -252,39 +256,37 @@ Moves a file or directory at a given path to a different path. Can be used to
 rename as well. The two paths are sent separately so that they are not limited
 by internal packet buffer sizes differently from other commands.
 
-**TODO** Maybe we do pack two paths in one packet. That will limit path length
-but prevent any secondary storage internally.
-
 The header is two fixed entries and a variable length path:
 
 * Command: Single byte. Always ``0x60``.
 * 1 Byte reserved for padding.
 * Old Path length: 16-bit number encoding the encoded length of the path string.
-* Old Path: UTF-8 encoded string that is *not* null terminated. (We send the length instead.)
-
-The server will reply with:
-* Command: Single byte. Always ``0x61``.
-* Status: Single byte. ``0x01`` on success or ``0x02`` if the old path is too long for internal buffers.
-
-* Command: Single byte. Always ``0x62``.
-* 1 Byte reserved for padding.
 * New Path length: 16-bit number encoding the encoded length of the path string.
+* Old Path: UTF-8 encoded string that is *not* null terminated. (We send the length instead.)
 * New Path: UTF-8 encoded string that is *not* null terminated. (We send the length instead.)
 
 The server will reply with:
-* Command: Single byte. Always ``0x63``.
+* Command: Single byte. Always ``0x61``.
 * Status: Single byte. ``0x01`` on success or ``0x02`` on error.
+
+**NOTE**: This is added in version 4.
 
 Versions
 =========
 
 Version 2
 ---------
+* Changes delete to delete contents of non-empty directories automatically.
 
+Version 3
+---------
 * Adds modification time.
   * Adds current time to file write command.
+  * Adds current time to make directory command.
   * Adds modification time to directory listing entries.
-* Changes delete to delete non-empty directories automatically.
+
+Version 4
+---------
 * Adds move command.
 
 Contributing
