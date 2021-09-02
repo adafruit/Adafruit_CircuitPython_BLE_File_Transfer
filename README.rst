@@ -263,6 +263,7 @@ The header is two fixed entries and a variable length path:
 * Old Path length: 16-bit number encoding the encoded length of the path string.
 * New Path length: 16-bit number encoding the encoded length of the path string.
 * Old Path: UTF-8 encoded string that is *not* null terminated. (We send the length instead.)
+* One padding byte. This can be used to null terminate the old path string.
 * New Path: UTF-8 encoded string that is *not* null terminated. (We send the length instead.)
 
 The server will reply with:

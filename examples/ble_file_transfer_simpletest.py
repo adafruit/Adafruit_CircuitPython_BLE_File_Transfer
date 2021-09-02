@@ -50,19 +50,20 @@ peer_address = None
 
 
 def wait_for_reconnect():
-    print("waiting for disconnect")
+    print("reconnecting", end="")
     while ble.connected:
         pass
-    print("reconnecting to", peer_address)
+    print(".", end="")
     new_connection = ble.connect(peer_address)
-    print("reconnected")
+    print(".", end="")
     if not new_connection.paired:
-        print("pairing")
+        print(".", end="")
         new_connection.pair()
     new_service = new_connection[adafruit_ble_file_transfer.FileTransferService]
     new_client = adafruit_ble_file_transfer.FileTransferClient(new_service)
-    print("sleeping")
+    print(".", end="")
     time.sleep(2)
+    print("done")
     return new_client
 
 
@@ -89,6 +90,7 @@ while True:
                     client.mkdir("/world/")
                 except ValueError:
                     print("path exists or isn't valid")
+                print(client.listdir("/"))
                 print(client.listdir("/world/"))
                 client = _write(client, "/world/hi.txt", "Hi world".encode("utf-8"))
 
@@ -109,27 +111,45 @@ while True:
                 print(c)
 
                 # Test deleting
+                print("Testing delete in /world/")
                 print(client.listdir("/world/"))
                 try:
                     client.delete("/world/hello.txt")
                 except ValueError:
-                    print("exception correctly raised")
+                    print("delete failed")
 
                 try:
-                    client.delete("/world/")  # should raise an exception
+                    client.delete("/world/")
+                    print("deleted /world/")
                 except ValueError:
-                    print("exception correctly raised")
+                    print("delete failed")
                 print(client.listdir("/world/"))
                 try:
                     client.delete("/world/hi.txt")
                 except ValueError:
-                    print("missing /world/hi.txt")
+                    pass
                 try:
                     client.delete("/world/")
                 except ValueError:
-                    print("cannot delete /world/")
-                print(client.listdir("/"))
+                    pass
+                print()
 
+                # Test move
+                print("Testing move")
+                print(client.listdir("/"))
+                try:
+                    client.move("/hello.txt", "/world/hi.txt")
+                except ValueError:
+                    pass
+                try:
+                    client.move("/hello.txt", "/hi.txt")
+                except ValueError:
+                    print("move failed")
+                print(client.listdir("/"))
+                print()
+
+                # Test larger files
+                print("Testing larger files")
                 large_1k = bytearray(1024)
                 for i, _ in enumerate(large_1k):
                     large_1k[i] = random.randint(0, 255)
@@ -139,6 +159,7 @@ while True:
                     print(binascii.hexlify(large_1k))
                     print(binascii.hexlify(contents))
                     raise RuntimeError("large contents don't match!")
+                print()
             time.sleep(20)
     except ConnectionError as e:
         pass

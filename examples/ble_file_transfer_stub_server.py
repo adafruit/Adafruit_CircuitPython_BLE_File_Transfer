@@ -8,6 +8,7 @@
 import binascii
 import struct
 import os
+import time
 
 import adafruit_ble
 import adafruit_ble_creation
@@ -28,6 +29,8 @@ print(binascii.hexlify(bytes(advert)), len(bytes(advert)))
 CHUNK_SIZE = 4000
 
 stored_data = {}
+# path to timestamp, no nesting
+stored_timestamps = {}
 
 
 def find_dir(full_path):
@@ -84,6 +87,8 @@ def read_complete_path(starting_path, total_length):
 
 
 packet_buffer = bytearray(CHUNK_SIZE + 20)
+# Mimic the disconnections that happen when a CP device reloads and resets BLE.
+disconnect_after = None
 while True:
     ble.start_advertising(advert)
     while not ble.connected:
@@ -93,16 +98,26 @@ while True:
             read = service.raw.readinto(packet_buffer)
         except ConnectionError:
             continue
+        if disconnect_after is not None and time.monotonic() > disconnect_after:
+            for c in ble.connections:
+                c.disconnect()
+            disconnect_after = None
+            continue
         if read == 0:
             continue
 
         p = packet_buffer[:read]
         command = struct.unpack_from("<B", p)[0]
         if command == FileTransferService.WRITE:
-            path_length, start_offset, content_length = struct.unpack_from(
-                "<xHII", p, offset=1
-            )
-            path_start = struct.calcsize("<BxHII")
+            print("write")
+            (
+                path_length,
+                start_offset,
+                content_length,
+                modification_time,
+            ) = struct.unpack_from("<xHIIQ", p, offset=1)
+            print(modification_time)
+            path_start = struct.calcsize("<BxHIIQ")
             path = read_complete_path(p[path_start:], path_length)
 
             d = find_dir(path)
@@ -123,33 +138,43 @@ while True:
             data_size = 0
             ok = True
 
+            # Trucate to the nearest 3 seconds.
+            truncation = 3 * 1_000_000_000
+            truncated_time = (modification_time // truncation) * truncation
+            print("truncated time", truncated_time)
+
             while contents_read < content_length and ok:
                 next_amount = min(CHUNK_SIZE, content_length - contents_read)
                 header = struct.pack(
-                    "<BBxxII",
+                    "<BBxxIIQ",
                     FileTransferService.WRITE_PACING,
                     FileTransferService.OK,
                     contents_read,
                     next_amount,
+                    truncated_time,
                 )
                 write_packets(header)
+                print("header", header)
                 read = read_packets(
                     packet_buffer, target_size=next_amount + write_data_header_size
                 )
+                print("read", read)
                 cmd, status, offset, data_size = struct.unpack_from(
                     "<BBxxII", packet_buffer
                 )
+                print(cmd, status, offset, data_size)
                 if status != FileTransferService.OK:
                     print("bad status, resetting")
                     ok = False
                 if cmd != FileTransferService.WRITE_DATA:
                     write_packets(
                         struct.pack(
-                            "<BBxxII",
+                            "<BBxxIIQ",
                             FileTransferService.WRITE_PACING,
                             FileTransferService.ERROR_PROTOCOL,
                             0,
                             0,
+                            truncated_time,
                         )
                     )
                     print("protocol error, resetting")
@@ -160,15 +185,21 @@ while True:
                 ]
                 contents_read += data_size
             if not ok:
+                print("not ok")
                 break
 
+            stored_timestamps[path] = truncated_time
+
+            print("write done")
+            disconnect_after = time.monotonic() + 0.7
             write_packets(
                 struct.pack(
-                    "<BBxxII",
+                    "<BBxxIIQ",
                     FileTransferService.WRITE_PACING,
                     FileTransferService.OK,
                     content_length,
                     0,
+                    truncated_time,
                 )
             )
         elif command == adafruit_ble_file_transfer.FileTransferService.READ:
@@ -177,7 +208,7 @@ while True:
             path = read_complete_path(p[path_start:], path_length)
             d = find_dir(path)
             filename = path.split("/")[-1]
-            if filename not in d:
+            if d is None or filename not in d:
                 print("missing path")
                 error_response = struct.pack(
                     "<BBxxIII",
@@ -244,8 +275,13 @@ while True:
                     print("mismatched offset")
                     break
         elif command == adafruit_ble_file_transfer.FileTransferService.MKDIR:
-            path_length = struct.unpack_from("<xH", p, offset=1)[0]
-            path_start = struct.calcsize("<BxH")
+            print("mkdir")
+            path_length, modification_time = struct.unpack_from("<xHQ", p, offset=1)
+            # Trucate to the nearest 3 seconds.
+            truncation = 3 * 1_000_000_000
+            truncated_time = (modification_time // truncation) * truncation
+            print("truncated time", truncated_time)
+            path_start = struct.calcsize("<BxHQ")
             path = read_complete_path(p[path_start:], path_length)
             pieces = path.split("/")
             parent = stored_data
@@ -253,20 +289,28 @@ while True:
             ok = True
             while i < len(pieces) and ok:
                 piece = pieces[i]
+                print(piece)
                 if piece not in parent:
                     parent[piece] = {}
                 elif not isinstance(parent[piece], dict):
                     ok = False
-                parent = piece
+                parent = parent[piece]
                 i += 1
 
             if ok:
                 header = struct.pack(
-                    "<BB", FileTransferService.MKDIR_STATUS, FileTransferService.OK
+                    "<BBxxQ",
+                    FileTransferService.MKDIR_STATUS,
+                    FileTransferService.OK,
+                    truncated_time,
                 )
+                stored_timestamps[path] = truncated_time
             else:
                 header = struct.pack(
-                    "<BB", FileTransferService.MKDIR_STATUS, FileTransferService.ERR
+                    "<BBxxQ",
+                    FileTransferService.MKDIR_STATUS,
+                    FileTransferService.ERR,
+                    0,
                 )
             write_packets(header)
         elif command == adafruit_ble_file_transfer.FileTransferService.LISTDIR:
@@ -279,7 +323,7 @@ while True:
             d = find_dir(path)
             if d is None:
                 error = struct.pack(
-                    "<BBHIIII",
+                    "<BBHIIIIQ",
                     FileTransferService.LISTDIR_ENTRY,
                     FileTransferService.ERROR,
                     0,
@@ -287,8 +331,10 @@ while True:
                     0,
                     0,
                     0,
+                    0,
                 )
                 write_packets(error)
+                continue
 
             filenames = sorted(d.keys())
             total_files = len(filenames)
@@ -301,8 +347,12 @@ while True:
                     content_length = 0
                 else:
                     content_length = len(contents)
+                full_path = path + filename
+                if flags == FileTransferService.DIRECTORY:
+                    print(filename)
+                timestamp = stored_timestamps[full_path]
                 header = struct.pack(
-                    "<BBHIIII",
+                    "<BBHIIIIQ",
                     FileTransferService.LISTDIR_ENTRY,
                     FileTransferService.OK,
                     len(encoded_filename),
@@ -310,17 +360,19 @@ while True:
                     total_files,
                     flags,
                     content_length,
+                    timestamp,
                 )
                 packet = header + encoded_filename
                 write_packets(packet)
 
             header = struct.pack(
-                "<BBHIIII",
+                "<BBHIIIIQ",
                 FileTransferService.LISTDIR_ENTRY,
                 FileTransferService.OK,
                 0,
                 total_files,
                 total_files,
+                0,
                 0,
                 0,
             )
@@ -331,21 +383,15 @@ while True:
             path = read_complete_path(p[path_start:], path_length)
             d = find_dir(path)
             filename = path.split("/")[-1]
-            if not filename and d:
-                print("trying to delete directory with contents")
-                error_response = struct.pack(
-                    "<BB", FileTransferService.DELETE_STATUS, FileTransferService.ERROR
-                )
-                write_packets(error_response)
-                continue
+
+            print("delete", path)
 
             # We're a directory.
-            if not filename:
-                path = path[:-1]
-                filename = path.split("/")[-1]
-                d = find_dir(path)
+            if not filename and d is not None:
+                filename = path[:-1].split("/")[-1]
+                d = find_dir(path[:-1])
 
-            if filename not in d:
+            if d is None or filename not in d or path == "/":
                 print("missing path", path, d)
                 error_response = struct.pack(
                     "<BB", FileTransferService.DELETE_STATUS, FileTransferService.ERROR
@@ -354,10 +400,64 @@ while True:
                 continue
             ok = True
 
+            del stored_timestamps[path]
             del d[filename]
 
             header = struct.pack(
                 "<BB", FileTransferService.DELETE_STATUS, FileTransferService.OK
+            )
+            write_packets(header)
+        elif command == adafruit_ble_file_transfer.FileTransferService.MOVE:
+            old_path_length, new_path_length = struct.unpack_from("<xHH", p, offset=1)
+            print("move path lengths", old_path_length, new_path_length)
+            path_start = struct.calcsize("<BxHH")
+            # We read in one extra character and then discard it. We don't need it. (C does.)
+            both_paths = read_complete_path(
+                p[path_start:], old_path_length + 1 + new_path_length
+            )
+            old_path = both_paths[:old_path_length]
+            new_path = both_paths[old_path_length + 1 :]
+            print("old path", old_path)
+
+            print("move", old_path, new_path)
+
+            old_d = find_dir(old_path)
+            old_filename = old_path.split("/")[-1]
+            # If we're a directory then move up one.
+            if not old_filename and old_d is not None:
+                old_filename = old_path[:-1].split("/")[-1]
+                old_d = find_dir(old_path[:-1])
+
+            new_d = find_dir(new_path)
+            new_filename = new_path.split("/")[-1]
+            # If we're a directory then move up one.
+            if not new_filename and new_d is not None:
+                new_filename = new_path[:-1].split("/")[-1]
+                new_d = find_dir(new_path[:-1])
+
+            if old_d is None or old_filename not in old_d or old_path == "/":
+                print("missing old path", old_path)
+                error_response = struct.pack(
+                    "<BB", FileTransferService.MOVE_STATUS, FileTransferService.ERROR
+                )
+                write_packets(error_response)
+                continue
+
+            if new_d is None or new_filename in new_d or new_path == "/":
+                print("missing new path", new_path)
+                error_response = struct.pack(
+                    "<BB", FileTransferService.MOVE_STATUS, FileTransferService.ERROR
+                )
+                write_packets(error_response)
+                continue
+
+            new_d[new_filename] = old_d[old_filename]
+            del old_d[old_filename]
+            stored_timestamps[new_path] = stored_timestamps[old_path]
+            del stored_timestamps[old_path]
+
+            header = struct.pack(
+                "<BB", FileTransferService.MOVE_STATUS, FileTransferService.OK
             )
             write_packets(header)
         else:
