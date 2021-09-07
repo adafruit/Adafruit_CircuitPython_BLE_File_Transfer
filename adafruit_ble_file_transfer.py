@@ -118,6 +118,7 @@ class FileTransferClient:
         self._service = service
 
     def _write(self, buffer):
+        # print("write", binascii.hexlify(buffer))
         sent = 0
         while sent < len(buffer):
             remaining = len(buffer) - sent
@@ -127,21 +128,22 @@ class FileTransferClient:
 
     def _readinto(self, buffer):
         read = 0
+        long_buffer = bytearray(512)
         # Read back how much we can write
         while read == 0:
             try:
                 read = self._service.raw.readinto(buffer)
-            except ValueError as error:
-                print(error)
-                long_buffer = bytearray(512)
+            except ValueError:
                 read = self._service.raw.readinto(long_buffer)
-                print("long packet", long_buffer[:read])
+        buffer[:read] = long_buffer[:read]
         return read
 
     def read(self, path, *, offset=0):
         """Returns the contents of the file at the given path starting at the given offset"""
+        # pylint: disable=too-many-locals
         path = path.encode("utf-8")
         chunk_size = CHUNK_SIZE
+        start_offset = offset
         encoded = (
             struct.pack(
                 "<BxHII", FileTransferService.READ, len(path), offset, chunk_size
@@ -150,30 +152,45 @@ class FileTransferClient:
         )
         self._write(encoded)
         b = bytearray(struct.calcsize("<BBxxIII") + chunk_size)
-        current_offset = offset
+        current_offset = start_offset
+        chunk_done = True
         content_length = None
-        buf = None
+        chunk_end = 0
+        # pylint: disable=unsupported-assignment-operation
+        buf = []
         data_header_size = struct.calcsize("<BBxxIII")
         while content_length is None or current_offset < content_length:
             read = self._readinto(b)
-            (
-                cmd,
-                status,
-                current_offset,
-                content_length,
-                _,
-            ) = struct.unpack_from("<BBxxIII", b)
-            if cmd != FileTransferService.READ_DATA:
-                raise ProtocolError("Incorrect reply")
-            if status != FileTransferService.OK:
-                raise ValueError("Missing file")
-            if buf is None:
-                buf = bytearray(content_length - offset)
-            out_offset = current_offset - offset
-            buf[out_offset : out_offset + (read - data_header_size)] = b[
-                data_header_size:read
-            ]
-            current_offset += read - data_header_size
+            if chunk_done:
+                (
+                    cmd,
+                    status,
+                    content_offset,
+                    content_length,
+                    chunk_length,
+                ) = struct.unpack_from("<BBxxIII", b)
+                chunk_end = content_offset + chunk_length
+                if cmd != FileTransferService.READ_DATA:
+                    print("error:", b)
+                    raise ProtocolError("Incorrect reply")
+                if status != FileTransferService.OK:
+                    raise ValueError("Missing file")
+                if not buf:
+                    buf = bytearray(content_length - start_offset)
+                out_offset = current_offset - start_offset
+                buf[out_offset : out_offset + (read - data_header_size)] = b[
+                    data_header_size:read
+                ]
+                current_offset += read - data_header_size
+            else:
+                out_offset = current_offset - start_offset
+                buf[out_offset : out_offset + read] = b[:read]
+                current_offset += read
+
+            chunk_done = current_offset == chunk_end
+            if not chunk_done:
+                continue
+
             chunk_size = min(CHUNK_SIZE, content_length - current_offset)
             if chunk_size == 0:
                 break
@@ -206,6 +223,7 @@ class FileTransferClient:
             self._readinto(b)
             cmd, status, current_offset, free_space = struct.unpack("<BBxxII", b)
             if status != FileTransferService.OK:
+                print("write error", status)
                 raise RuntimeError()
             if (
                 cmd != FileTransferService.WRITE_PACING
@@ -256,6 +274,7 @@ class FileTransferClient:
 
     def listdir(self, path):
         """Returns a list of tuples, one tuple for each file or directory in the given path"""
+        # pylint: disable=too-many-locals
         paths = []
         path = path.encode("utf-8")
         encoded = struct.pack("<BxH", FileTransferService.LISTDIR, len(path)) + path
@@ -264,31 +283,42 @@ class FileTransferClient:
         i = 0
         total = 10  # starting value that will be replaced by the first response
         header_size = struct.calcsize("<BBHIIII")
+        path_length = 0
+        encoded_path = b""
         while i < total:
             read = self._readinto(b)
             offset = 0
+            file_size = 0
+            flags = 0
             while offset < read:
-                (
-                    cmd,
-                    status,
-                    path_length,
-                    i,
-                    total,
-                    flags,
-                    file_size,
-                ) = struct.unpack_from("<BBHIIII", b, offset=offset)
-                if cmd != FileTransferService.LISTDIR_ENTRY:
-                    raise ProtocolError()
-                if i >= total:
-                    break
-                path = str(
-                    b[offset + header_size : offset + header_size + path_length],
-                    "utf-8",
-                )
-                paths.append((path, file_size, flags))
-                offset += header_size + path_length
-                if status != FileTransferService.OK:
-                    break
+                if len(encoded_path) == path_length:
+                    if path_length > 0:
+                        path = str(
+                            encoded_path,
+                            "utf-8",
+                        )
+                        paths.append((path, file_size, flags))
+                    (
+                        cmd,
+                        status,
+                        path_length,
+                        i,
+                        total,
+                        flags,
+                        file_size,
+                    ) = struct.unpack_from("<BBHIIII", b, offset=offset)
+                    offset += header_size
+                    encoded_path = b""
+                    if cmd != FileTransferService.LISTDIR_ENTRY:
+                        raise ProtocolError()
+                    if status != FileTransferService.OK:
+                        break
+                    if i >= total:
+                        break
+
+                path_read = min(path_length - len(encoded_path), read - offset)
+                encoded_path += b[offset : offset + path_read]
+                offset += path_read
         return paths
 
     def delete(self, path):

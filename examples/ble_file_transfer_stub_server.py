@@ -5,6 +5,7 @@
 """This example broadcasts out the creation id based on the CircuitPython machine
    string and provides a stub FileTransferService."""
 
+import binascii
 import struct
 import os
 
@@ -22,7 +23,7 @@ ble = adafruit_ble.BLERadio()
 service = FileTransferService()
 print(ble.name)
 advert = adafruit_ble_creation.Creation(creation_id=cid, services=[service])
-print(bytes(advert), len(bytes(advert)))
+print(binascii.hexlify(bytes(advert)), len(bytes(advert)))
 
 CHUNK_SIZE = 4000
 
@@ -250,7 +251,7 @@ while True:
             parent = stored_data
             i = 1
             ok = True
-            while i < len(pieces) - 1 and ok:
+            while i < len(pieces) and ok:
                 piece = pieces[i]
                 if piece not in parent:
                     parent[piece] = {}
@@ -297,6 +298,7 @@ while True:
                 contents = d[filename]
                 if isinstance(contents, dict):
                     flags = FileTransferService.DIRECTORY
+                    content_length = 0
                 else:
                     content_length = len(contents)
                 header = struct.pack(
