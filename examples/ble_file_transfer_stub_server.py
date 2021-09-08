@@ -120,7 +120,7 @@ while True:
             path = read_complete_path(p[path_start:], path_length)
 
             d = find_dir(path)
-            filename = path.split("/")[-1]
+            filename = path.rsplit("/", maxsplit=1)[-1]
             if filename not in d:
                 contents = bytearray(content_length)
                 d[filename] = contents
@@ -199,7 +199,7 @@ while True:
             path_start = struct.calcsize("<BxHII")
             path = read_complete_path(p[path_start:], path_length)
             d = find_dir(path)
-            filename = path.split("/")[-1]
+            filename = path.rsplit("/", maxsplit=1)[-1]
             if d is None or filename not in d:
                 print("missing path")
                 error_response = struct.pack(
@@ -371,11 +371,11 @@ while True:
             path_start = struct.calcsize("<BxH")
             path = read_complete_path(p[path_start:], path_length)
             d = find_dir(path)
-            filename = path.split("/")[-1]
+            filename = path.rsplit("/", maxsplit=1)[-1]
 
             # We're a directory.
             if not filename and d is not None:
-                filename = path[:-1].split("/")[-1]
+                filename = path[:-1].rsplit("/", maxsplit=1)[-1]
                 d = find_dir(path[:-1])
 
             if d is None or filename not in d or path == "/":
