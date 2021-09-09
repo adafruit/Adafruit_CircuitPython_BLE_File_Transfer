@@ -160,8 +160,8 @@ The header is four fixed entries and a variable length path:
 * 1 Byte reserved for padding.
 * Path length: 16-bit number encoding the encoded length of the path string.
 * Offset: 32-bit number encoding the starting offset to write.
-* Total size: 32-bit number encoding the total length of the file contents.
 * Current time: 64-bit number encoding nanoseconds since January 1st, 1970. Used as the file modification time. Not all system will support the full resolution. Use the truncated time response value for caching.
+* Total size: 32-bit number encoding the total length of the file contents.
 * Path: UTF-8 encoded string that is *not* null terminated. (We send the length instead.)
 
 The server will repeatedly respond until the total length has been transferred with:
@@ -170,8 +170,8 @@ The server will repeatedly respond until the total length has been transferred w
 * Status: Single byte. ``0x01`` if OK. ``0x02`` if any parent directory is missing or a file.
 * 2 Bytes reserved for padding.
 * Offset: 32-bit number encoding the starting offset to write. (Should match the offset from the previous 0x20 or 0x22 message)
-* Free space: 32-bit number encoding the amount of data the client can send.
 * Truncated time: 64-bit number encoding nanoseconds since January 1st, 1970 as stored by the file system. The resolution may be less that the protocol. It is sent back for use in caching on the host side.
+* Free space: 32-bit number encoding the amount of data the client can send.
 
 The client will repeatedly respond until the total length has been transferred with:
 
@@ -216,6 +216,7 @@ The header is two fixed entries and a variable length path:
 * Command: Single byte. Always ``0x40``.
 * 1 Byte reserved for padding.
 * Path length: 16-bit number encoding the encoded length of the path string.
+* 4 Bytes reserved for padding.
 * Current time: 64-bit number encoding nanoseconds since January 1st, 1970. Used as the file modification time. Not all system will support the full resolution. Use the truncated time response value for caching.
 * Path: UTF-8 encoded string that is *not* null terminated. (We send the length instead.)
 
@@ -223,7 +224,7 @@ The server will reply with:
 
 * Command: Single byte. Always ``0x41``.
 * Status: Single byte. ``0x01`` if the directory(s) were created or ``0x02`` if any parent of the path is an existing file.
-* 2 Bytes reserved for padding.
+* 6 Bytes reserved for padding.
 * Truncated time: 64-bit number encoding nanoseconds since January 1st, 1970 as stored by the file system. The resolution may be less that the protocol. It is sent back for use in caching on the host side.
 
 ``0x50`` - List a directory
@@ -250,8 +251,8 @@ The server will reply with n+1 entries for a directory with n files:
   - Bit 0: Set when the entry is a directory
   - Bits 1-7: Reserved
 
-* File size: 32-bit number encoding the size of the file. Ignore for directories. Value may change.
 * Modification time: 64-bit number of nanoseconds since January 1st, 1970. *However*, files modifiers may not have an accurate clock so do *not* assume it is correct. Instead, only use it to determine cacheability vs a local copy.
+* File size: 32-bit number encoding the size of the file. Ignore for directories. Value may change.
 * Path: UTF-8 encoded string that is *not* null terminated. (We send the length instead.) These paths are relative so they won't contain ``/`` at all.
 
 The transaction is complete when the final entry is sent from the server. It will have entry number == total entries and zeros for flags, file size and path length.

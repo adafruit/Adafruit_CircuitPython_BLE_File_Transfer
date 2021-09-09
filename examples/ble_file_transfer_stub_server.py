@@ -113,10 +113,10 @@ while True:
             (
                 path_length,
                 start_offset,
-                content_length,
                 modification_time,
-            ) = struct.unpack_from("<xHIIQ", p, offset=1)
-            path_start = struct.calcsize("<BxHIIQ")
+                content_length,
+            ) = struct.unpack_from("<xHIQI", p, offset=1)
+            path_start = struct.calcsize("<BxHIQI")
             path = read_complete_path(p[path_start:], path_length)
 
             d = find_dir(path)
@@ -144,12 +144,12 @@ while True:
             while contents_read < content_length and ok:
                 next_amount = min(CHUNK_SIZE, content_length - contents_read)
                 header = struct.pack(
-                    "<BBxxIIQ",
+                    "<BBxxIQI",
                     FileTransferService.WRITE_PACING,
                     FileTransferService.OK,
                     contents_read,
-                    next_amount,
                     truncated_time,
+                    next_amount,
                 )
                 write_packets(header)
                 read = read_packets(
@@ -164,12 +164,12 @@ while True:
                 if cmd != FileTransferService.WRITE_DATA:
                     write_packets(
                         struct.pack(
-                            "<BBxxIIQ",
+                            "<BBxxIQI",
                             FileTransferService.WRITE_PACING,
                             FileTransferService.ERROR_PROTOCOL,
                             0,
-                            0,
                             truncated_time,
+                            0,
                         )
                     )
                     print("protocol error, resetting")
@@ -186,12 +186,12 @@ while True:
             disconnect_after = time.monotonic() + 0.7
             write_packets(
                 struct.pack(
-                    "<BBxxIIQ",
+                    "<BBxxIQI",
                     FileTransferService.WRITE_PACING,
                     FileTransferService.OK,
                     content_length,
-                    0,
                     truncated_time,
+                    0,
                 )
             )
         elif command == adafruit_ble_file_transfer.FileTransferService.READ:
@@ -267,11 +267,11 @@ while True:
                     print("mismatched offset")
                     break
         elif command == adafruit_ble_file_transfer.FileTransferService.MKDIR:
-            path_length, modification_time = struct.unpack_from("<xHQ", p, offset=1)
+            path_length, modification_time = struct.unpack_from("<xHxxxxQ", p, offset=1)
             # Trucate to the nearest 3 seconds.
             truncation = 3 * 1_000_000_000
             truncated_time = (modification_time // truncation) * truncation
-            path_start = struct.calcsize("<BxHQ")
+            path_start = struct.calcsize("<BxHxxxxQ")
             path = read_complete_path(p[path_start:], path_length)
             pieces = path.split("/")[1:-1]
             parent = stored_data
@@ -288,7 +288,7 @@ while True:
 
             if ok:
                 header = struct.pack(
-                    "<BBxxQ",
+                    "<BBxxxxxxQ",
                     FileTransferService.MKDIR_STATUS,
                     FileTransferService.OK,
                     truncated_time,
@@ -296,7 +296,7 @@ while True:
                 stored_timestamps[path] = truncated_time
             else:
                 header = struct.pack(
-                    "<BBxxQ",
+                    "<BBxxxxxxQ",
                     FileTransferService.MKDIR_STATUS,
                     FileTransferService.ERR,
                     0,
@@ -312,7 +312,7 @@ while True:
             d = find_dir(path)
             if d is None:
                 error = struct.pack(
-                    "<BBHIIIIQ",
+                    "<BBHIIIQI",
                     FileTransferService.LISTDIR_ENTRY,
                     FileTransferService.ERROR,
                     0,
@@ -341,21 +341,21 @@ while True:
                     full_file_path += "/"
                 timestamp = stored_timestamps[full_file_path]
                 header = struct.pack(
-                    "<BBHIIIIQ",
+                    "<BBHIIIQI",
                     FileTransferService.LISTDIR_ENTRY,
                     FileTransferService.OK,
                     len(encoded_filename),
                     i,
                     total_files,
                     flags,
-                    content_length,
                     timestamp,
+                    content_length,
                 )
                 packet = header + encoded_filename
                 write_packets(packet)
 
             header = struct.pack(
-                "<BBHIIIIQ",
+                "<BBHIIIQI",
                 FileTransferService.LISTDIR_ENTRY,
                 FileTransferService.OK,
                 0,

@@ -120,7 +120,7 @@ class FileTransferClient:
     def __init__(self, service):
         self._service = service
 
-        if service.version != 4:
+        if service.version < 3:
             raise RuntimeError("Service on other device too old")
 
     def _write(self, buffer):
@@ -221,21 +221,21 @@ class FileTransferClient:
             modification_time = int(time.time() * 1_000_000_000)
         encoded = (
             struct.pack(
-                "<BxHIIQ",
+                "<BxHIQI",
                 FileTransferService.WRITE,
                 len(path),
                 offset,
-                total_length,
                 modification_time,
+                total_length,
             )
             + path
         )
         self._write(encoded)
-        b = bytearray(struct.calcsize("<BBxxIIQ"))
+        b = bytearray(struct.calcsize("<BBxxIQI"))
         written = 0
         while written < len(contents):
             self._readinto(b)
-            cmd, status, current_offset, free_space, _ = struct.unpack("<BBxxIIQ", b)
+            cmd, status, current_offset, _, free_space = struct.unpack("<BBxxIQI", b)
             if status != FileTransferService.OK:
                 print("write error", status)
                 raise RuntimeError()
@@ -268,7 +268,7 @@ class FileTransferClient:
 
         # Wait for confirmation that everything was written ok.
         self._readinto(b)
-        cmd, status, offset, free_space, truncated_time = struct.unpack("<BBxxIIQ", b)
+        cmd, status, offset, truncated_time, free_space = struct.unpack("<BBxxIQI", b)
         if cmd != FileTransferService.WRITE_PACING or offset != total_length:
             raise ProtocolError()
         return truncated_time
@@ -280,15 +280,15 @@ class FileTransferClient:
             modification_time = int(time.time() * 1_000_000_000)
         encoded = (
             struct.pack(
-                "<BxHQ", FileTransferService.MKDIR, len(path), modification_time
+                "<BxHxxxxQ", FileTransferService.MKDIR, len(path), modification_time
             )
             + path
         )
         self._write(encoded)
 
-        b = bytearray(struct.calcsize("<BBxxQ"))
+        b = bytearray(struct.calcsize("<BBxxxxxxQ"))
         self._readinto(b)
-        cmd, status, truncated_time = struct.unpack("<BBxxQ", b)
+        cmd, status, truncated_time = struct.unpack("<BBxxxxxxQ", b)
         if cmd != FileTransferService.MKDIR_STATUS:
             raise ProtocolError()
         if status != FileTransferService.OK:
@@ -305,7 +305,7 @@ class FileTransferClient:
         b = bytearray(self._service.raw.incoming_packet_length)
         i = 0
         total = 10  # starting value that will be replaced by the first response
-        header_size = struct.calcsize("<BBHIIIIQ")
+        header_size = struct.calcsize("<BBHIIIQI")
         path_length = 0
         encoded_path = b""
         file_size = 0
@@ -329,9 +329,9 @@ class FileTransferClient:
                         i,
                         total,
                         flags,
-                        file_size,
                         modification_time,
-                    ) = struct.unpack_from("<BBHIIIIQ", b, offset=offset)
+                        file_size,
+                    ) = struct.unpack_from("<BBHIIIQI", b, offset=offset)
                     offset += header_size
                     encoded_path = b""
                     if cmd != FileTransferService.LISTDIR_ENTRY:
@@ -362,6 +362,8 @@ class FileTransferClient:
 
     def move(self, old_path, new_path):
         """Moves the file or directory from old_path to new_path."""
+        if self._service.version < 4:
+            raise RuntimeError("Service on other device too old")
         old_path = old_path.encode("utf-8")
         new_path = new_path.encode("utf-8")
         encoded = (
