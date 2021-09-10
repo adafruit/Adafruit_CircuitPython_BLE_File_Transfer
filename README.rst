@@ -87,8 +87,17 @@ The base UUID used in characteristics is ``ADAFxxxx-4669-6C65-5472-616E73666572`
 
 The service has two characteristics:
 
-* version (``0x0100``) - Simple unsigned 32-bit integer version number. Always 1.
+* version (``0x0100``) - Simple unsigned 32-bit integer version number. May be 1 - 4.
 * raw transfer (``0x0200``) - Bidirectional link with a custom protocol. The client does WRITE_NO_RESPONSE to the characteristic and then server replies via NOTIFY. (This is similar to the Nordic UART Service but on a single characteristic rather than two.) The commands over the transfer characteristic are idempotent and stateless. A disconnect during a command will reset the state.
+
+Time resolution
+---------------
+
+Time resolution varies based filesystem type. FATFS can only get down to the 2 second bound after 1980. Littlefs can do 64-bit nanoseconds after January 1st, 1970.
+
+To account for this, the protocol has time in 64-bit nanoseconds after January 1st, 1970. However, the server will respond with a potentially truncated version that is the value stored.
+
+Also note that devices serving the file transfer protocol may not have it's own clock so do not rely on time ordering. Any internal writes may set the time incorrectly. So, we only recommend using the value as a cache key.
 
 Commands
 ---------
@@ -151,6 +160,7 @@ The header is four fixed entries and a variable length path:
 * 1 Byte reserved for padding.
 * Path length: 16-bit number encoding the encoded length of the path string.
 * Offset: 32-bit number encoding the starting offset to write.
+* Current time: 64-bit number encoding nanoseconds since January 1st, 1970. Used as the file modification time. Not all system will support the full resolution. Use the truncated time response value for caching.
 * Total size: 32-bit number encoding the total length of the file contents.
 * Path: UTF-8 encoded string that is *not* null terminated. (We send the length instead.)
 
@@ -160,6 +170,7 @@ The server will repeatedly respond until the total length has been transferred w
 * Status: Single byte. ``0x01`` if OK. ``0x02`` if any parent directory is missing or a file.
 * 2 Bytes reserved for padding.
 * Offset: 32-bit number encoding the starting offset to write. (Should match the offset from the previous 0x20 or 0x22 message)
+* Truncated time: 64-bit number encoding nanoseconds since January 1st, 1970 as stored by the file system. The resolution may be less that the protocol. It is sent back for use in caching on the host side.
 * Free space: 32-bit number encoding the amount of data the client can send.
 
 The client will repeatedly respond until the total length has been transferred with:
@@ -173,11 +184,13 @@ The client will repeatedly respond until the total length has been transferred w
 
 The transaction is complete after the server has received all data and replied with a status with 0 free space and offset set to the content length.
 
+**NOTE**: Current time was added in version 3. The rest of the packets remained the same.
+
 
 ``0x30`` - Delete a file or directory
 +++++++++++++++++++++++++++++++++++++
 
-Deletes the file or directory at the given full path. Directories must be empty to be deleted.
+Deletes the file or directory at the given full path. Non-empty directories will have their contents deleted as well.
 
 The header is two fixed entries and a variable length path:
 
@@ -189,7 +202,9 @@ The header is two fixed entries and a variable length path:
 The server will reply with:
 
 * Command: Single byte. Always ``0x31``.
-* Status: Single byte. ``0x01`` if the file or directory was deleted or ``0x02`` if the path is a non-empty directory or non-existent.
+* Status: Single byte. ``0x01`` if the file or directory was deleted or ``0x02`` if the path is non-existent.
+
+**NOTE**: In version 2, this command now deletes contents of a directory as well. It won't error.
 
 ``0x40`` - Make a directory
 +++++++++++++++++++++++++++
@@ -201,12 +216,16 @@ The header is two fixed entries and a variable length path:
 * Command: Single byte. Always ``0x40``.
 * 1 Byte reserved for padding.
 * Path length: 16-bit number encoding the encoded length of the path string.
+* 4 Bytes reserved for padding.
+* Current time: 64-bit number encoding nanoseconds since January 1st, 1970. Used as the file modification time. Not all system will support the full resolution. Use the truncated time response value for caching.
 * Path: UTF-8 encoded string that is *not* null terminated. (We send the length instead.)
 
 The server will reply with:
 
 * Command: Single byte. Always ``0x41``.
 * Status: Single byte. ``0x01`` if the directory(s) were created or ``0x02`` if any parent of the path is an existing file.
+* 6 Bytes reserved for padding.
+* Truncated time: 64-bit number encoding nanoseconds since January 1st, 1970 as stored by the file system. The resolution may be less that the protocol. It is sent back for use in caching on the host side.
 
 ``0x50`` - List a directory
 +++++++++++++++++++++++++++
@@ -232,10 +251,52 @@ The server will reply with n+1 entries for a directory with n files:
   - Bit 0: Set when the entry is a directory
   - Bits 1-7: Reserved
 
+* Modification time: 64-bit number of nanoseconds since January 1st, 1970. *However*, files modifiers may not have an accurate clock so do *not* assume it is correct. Instead, only use it to determine cacheability vs a local copy.
 * File size: 32-bit number encoding the size of the file. Ignore for directories. Value may change.
 * Path: UTF-8 encoded string that is *not* null terminated. (We send the length instead.) These paths are relative so they won't contain ``/`` at all.
 
 The transaction is complete when the final entry is sent from the server. It will have entry number == total entries and zeros for flags, file size and path length.
+
+``0x60`` - Move a file or directory
++++++++++++++++++++++++++++++++++++
+
+Moves a file or directory at a given path to a different path. Can be used to
+rename as well. The two paths are sent separated by a byte so that the server
+may null-terminate the string itself. The client may send anything there.
+
+The header is two fixed entries and a variable length path:
+
+* Command: Single byte. Always ``0x60``.
+* 1 Byte reserved for padding.
+* Old Path length: 16-bit number encoding the encoded length of the path string.
+* New Path length: 16-bit number encoding the encoded length of the path string.
+* Old Path: UTF-8 encoded string that is *not* null terminated. (We send the length instead.)
+* One padding byte. This can be used to null terminate the old path string.
+* New Path: UTF-8 encoded string that is *not* null terminated. (We send the length instead.)
+
+The server will reply with:
+* Command: Single byte. Always ``0x61``.
+* Status: Single byte. ``0x01`` on success or ``0x02`` on error.
+
+**NOTE**: This is added in version 4.
+
+Versions
+=========
+
+Version 2
+---------
+* Changes delete to delete contents of non-empty directories automatically.
+
+Version 3
+---------
+* Adds modification time.
+  * Adds current time to file write command.
+  * Adds current time to make directory command.
+  * Adds modification time to directory listing entries.
+
+Version 4
+---------
+* Adds move command.
 
 Contributing
 ============
