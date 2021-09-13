@@ -110,7 +110,7 @@ All numbers are unsigned.
 
 All values are aligned with respect to the start of the packet.
 
-Status bytes are ``0x01`` for OK and ``0x02`` for error. Values other than `0x01` are errors. `0x00` should not be used for a specific error but still considered an error. `0x05` is an error for trying to modify a read-only filesystem.
+Status bytes are ``0x01`` for OK and ``0x02`` for error. Values other than ``0x01`` are errors. ``0x00`` should not be used for a specific error but still considered an error. ``0x05`` is an error for trying to modify a read-only filesystem.
 
 ``0x10`` - Read a file
 ++++++++++++++++++++++
