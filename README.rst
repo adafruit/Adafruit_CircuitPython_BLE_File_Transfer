@@ -104,14 +104,13 @@ Commands
 
 Commands always start with a fixed header. The first entry is always the command number itself encoded in a single byte. The number of subsequent entries in the header will vary by command. The entire header must be sent as a unit so set the characteristic with the full header packet. You can combine multiple commands into a single write as long as the complete header is in the packet.
 
-Paths use ``/`` as a separator and full paths must start with ``/``. Directory paths
-must end with ``/`` when provided as a full path.
+Paths use ``/`` as a separator and full paths must start with ``/``.
 
 All numbers are unsigned.
 
 All values are aligned with respect to the start of the packet.
 
-Status bytes are ``0x01`` for OK and ``0x02`` for error. Other values for error may be used for specific commands.
+Status bytes are ``0x01`` for OK and ``0x02`` for error. Values other than `0x01` are errors. `0x00` should not be used for a specific error but still considered an error. `0x05` is an error for trying to modify a read-only filesystem.
 
 ``0x10`` - Read a file
 ++++++++++++++++++++++
@@ -167,7 +166,7 @@ The header is four fixed entries and a variable length path:
 The server will repeatedly respond until the total length has been transferred with:
 
 * Command: Single byte. Always ``0x21``.
-* Status: Single byte. ``0x01`` if OK. ``0x02`` if any parent directory is missing or a file.
+* Status: Single byte. ``0x01`` if OK. ``0x05`` if the filesystem is read-only. ``0x02`` if any parent directory is missing or a file.
 * 2 Bytes reserved for padding.
 * Offset: 32-bit number encoding the starting offset to write. (Should match the offset from the previous 0x20 or 0x22 message)
 * Truncated time: 64-bit number encoding nanoseconds since January 1st, 1970 as stored by the file system. The resolution may be less that the protocol. It is sent back for use in caching on the host side.
@@ -202,7 +201,7 @@ The header is two fixed entries and a variable length path:
 The server will reply with:
 
 * Command: Single byte. Always ``0x31``.
-* Status: Single byte. ``0x01`` if the file or directory was deleted or ``0x02`` if the path is non-existent.
+* Status: Single byte. ``0x01`` if the file or directory was deleted, ``0x05`` if the filesystem is read-only or ``0x02`` if the path is non-existent.
 
 **NOTE**: In version 2, this command now deletes contents of a directory as well. It won't error.
 
@@ -223,7 +222,7 @@ The header is two fixed entries and a variable length path:
 The server will reply with:
 
 * Command: Single byte. Always ``0x41``.
-* Status: Single byte. ``0x01`` if the directory(s) were created or ``0x02`` if any parent of the path is an existing file.
+* Status: Single byte. ``0x01`` if the directory(s) were created, ``0x05`` if the filesystem is read-only or ``0x02`` if any parent of the path is an existing file.
 * 6 Bytes reserved for padding.
 * Truncated time: 64-bit number encoding nanoseconds since January 1st, 1970 as stored by the file system. The resolution may be less that the protocol. It is sent back for use in caching on the host side.
 
@@ -275,8 +274,9 @@ The header is two fixed entries and a variable length path:
 * New Path: UTF-8 encoded string that is *not* null terminated. (We send the length instead.)
 
 The server will reply with:
+
 * Command: Single byte. Always ``0x61``.
-* Status: Single byte. ``0x01`` on success or ``0x02`` on error.
+* Status: Single byte. ``0x01`` on success, ``0x05`` if read-only, or ``0x02`` on other error.
 
 **NOTE**: This is added in version 4.
 
@@ -297,6 +297,8 @@ Version 3
 Version 4
 ---------
 * Adds move command.
+* Adds 0x05 error for read-only filesystems. This is commonly that USB is editing the same filesystem.
+* Removes requirement that directory paths end with /.
 
 Contributing
 ============
