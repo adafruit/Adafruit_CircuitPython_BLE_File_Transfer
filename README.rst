@@ -3,7 +3,7 @@ Introduction
 
 
 .. image:: https://readthedocs.org/projects/adafruit-circuitpython-ble_file_transfer/badge/?version=latest
-    :target: https://circuitpython.readthedocs.io/projects/ble_file_transfer/en/latest/
+    :target: https://docs.circuitpython.org/projects/ble_file_transfer/en/latest/
     :alt: Documentation Status
 
 
