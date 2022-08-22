@@ -24,7 +24,7 @@ from adafruit_ble.services import Service
 
 try:
     from typing import Optional, List
-    from circuitpython_typing import WriteableBuffer
+    from circuitpython_typing import WriteableBuffer, ReadableBuffer
 except ImportError:
     pass
 
@@ -123,13 +123,13 @@ class ProtocolError(BaseException):
 class FileTransferClient:
     """Helper class to communicating with a File Transfer server"""
 
-    def __init__(self, service) -> None:
+    def __init__(self, service: Service) -> None:
         self._service = service
 
         if service.version < 3:
             raise RuntimeError("Service on other device too old")
 
-    def _write(self, buffer) -> None:
+    def _write(self, buffer: ReadableBuffer) -> None:
         # print("write", binascii.hexlify(buffer))
         sent = 0
         while sent < len(buffer):
