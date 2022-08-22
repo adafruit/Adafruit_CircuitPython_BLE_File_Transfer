@@ -23,7 +23,7 @@ from adafruit_ble.uuid import VendorUUID, StandardUUID
 from adafruit_ble.services import Service
 
 try:
-    from typing import Optional, List  # pylint: disable=unused-import
+    from typing import Optional, List
     from circuitpython_typing import WriteableBuffer
 except ImportError:
     pass
@@ -65,7 +65,7 @@ class _TransferCharacteristic(ComplexCharacteristic):
             fixed_length=False,
         )
 
-    def bind(self, service):
+    def bind(self, service: Service) -> _bleio.PacketBuffer:
         """Binds the characteristic to the given Service."""
         bound_characteristic = super().bind(service)
         return _bleio.PacketBuffer(
