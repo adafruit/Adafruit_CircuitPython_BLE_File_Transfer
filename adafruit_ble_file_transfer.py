@@ -22,6 +22,12 @@ from adafruit_ble.characteristics.int import Uint32Characteristic
 from adafruit_ble.uuid import VendorUUID, StandardUUID
 from adafruit_ble.services import Service
 
+try:
+    from typing import Optional, List
+    from circuitpython_typing import WriteableBuffer, ReadableBuffer
+except ImportError:
+    pass
+
 __version__ = "0.0.0-auto.0"
 __repo__ = "https://github.com/adafruit/Adafruit_CircuitPython_BLE_File_Transfer.git"
 
@@ -33,7 +39,7 @@ class FileTransferUUID(VendorUUID):
 
     # pylint: disable=too-few-public-methods
 
-    def __init__(self, uuid16):
+    def __init__(self, uuid16: int) -> None:
         uuid128 = bytearray("refsnarTeliF".encode("utf-8") + b"\x00\x00\xaf\xad")
         uuid128[-3] = uuid16 >> 8
         uuid128[-4] = uuid16 & 0xFF
@@ -48,7 +54,7 @@ class _TransferCharacteristic(ComplexCharacteristic):
 
     uuid = FileTransferUUID(0x0200)
 
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__(
             properties=Characteristic.WRITE_NO_RESPONSE
             | Characteristic.READ
@@ -59,7 +65,7 @@ class _TransferCharacteristic(ComplexCharacteristic):
             fixed_length=False,
         )
 
-    def bind(self, service):
+    def bind(self, service: Service) -> _bleio.PacketBuffer:
         """Binds the characteristic to the given Service."""
         bound_characteristic = super().bind(service)
         return _bleio.PacketBuffer(
@@ -117,13 +123,13 @@ class ProtocolError(BaseException):
 class FileTransferClient:
     """Helper class to communicating with a File Transfer server"""
 
-    def __init__(self, service):
+    def __init__(self, service: Service) -> None:
         self._service = service
 
         if service.version < 3:
             raise RuntimeError("Service on other device too old")
 
-    def _write(self, buffer):
+    def _write(self, buffer: ReadableBuffer) -> None:
         # print("write", binascii.hexlify(buffer))
         sent = 0
         while sent < len(buffer):
@@ -132,7 +138,7 @@ class FileTransferClient:
             self._service.raw.write(buffer[sent : sent + next_send])
             sent += next_send
 
-    def _readinto(self, buffer):
+    def _readinto(self, buffer: WriteableBuffer) -> bytearray:
         read = 0
         long_buffer = bytearray(512)
         # Read back how much we can write
@@ -144,7 +150,7 @@ class FileTransferClient:
                 buffer[:read] = long_buffer[:read]
         return read
 
-    def read(self, path, *, offset=0):
+    def read(self, path: str, *, offset: int = 0) -> bytearray:
         """Returns the contents of the file at the given path starting at the given offset"""
         # pylint: disable=too-many-locals
         path = path.encode("utf-8")
@@ -210,7 +216,14 @@ class FileTransferClient:
             self._write(encoded)
         return buf
 
-    def write(self, path, contents, *, offset=0, modification_time=None):
+    def write(
+        self,
+        path: str,
+        contents: bytearray,
+        *,
+        offset: int = 0,
+        modification_time: Optional[int] = None,
+    ) -> int:
         """Writes the given contents to the given path starting at the given offset.
         Returns the trunctated modification time.
 
@@ -273,7 +286,7 @@ class FileTransferClient:
             raise ProtocolError()
         return truncated_time
 
-    def mkdir(self, path, modification_time=None):
+    def mkdir(self, path: str, modification_time: Optional[int] = None) -> int:
         """Makes the directory and any missing parents. Returns the truncated time"""
         path = path.encode("utf-8")
         if modification_time is None:
@@ -295,7 +308,7 @@ class FileTransferClient:
             raise ValueError("Invalid path")
         return truncated_time
 
-    def listdir(self, path):
+    def listdir(self, path: str) -> List[tuple]:
         """Returns a list of tuples, one tuple for each file or directory in the given path"""
         # pylint: disable=too-many-locals
         paths = []
@@ -346,7 +359,7 @@ class FileTransferClient:
                 offset += path_read
         return paths
 
-    def delete(self, path):
+    def delete(self, path: str) -> None:
         """Deletes the file or directory at the given path."""
         path = path.encode("utf-8")
         encoded = struct.pack("<BxH", FileTransferService.DELETE, len(path)) + path
@@ -360,7 +373,7 @@ class FileTransferClient:
         if status != FileTransferService.OK:
             raise ValueError("Missing file")
 
-    def move(self, old_path, new_path):
+    def move(self, old_path: str, new_path: str) -> None:
         """Moves the file or directory from old_path to new_path."""
         if self._service.version < 4:
             raise RuntimeError("Service on other device too old")
