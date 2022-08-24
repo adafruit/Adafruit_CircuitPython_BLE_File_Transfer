@@ -65,7 +65,7 @@ class _TransferCharacteristic(ComplexCharacteristic):
             fixed_length=False,
         )
 
-    def bind(self, service: Service) -> _bleio.PacketBuffer:
+    def bind(self, service: "FileTransferService") -> _bleio.PacketBuffer:
         """Binds the characteristic to the given Service."""
         bound_characteristic = super().bind(service)
         return _bleio.PacketBuffer(
