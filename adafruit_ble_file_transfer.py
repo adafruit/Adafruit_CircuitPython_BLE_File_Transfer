@@ -14,17 +14,18 @@ Simple BLE Service for reading and writing files over BLE
 
 import struct
 import time
-import _bleio
 
+import _bleio
 from adafruit_ble.attributes import Attribute
 from adafruit_ble.characteristics import Characteristic, ComplexCharacteristic
 from adafruit_ble.characteristics.int import Uint32Characteristic
-from adafruit_ble.uuid import VendorUUID, StandardUUID
 from adafruit_ble.services import Service
+from adafruit_ble.uuid import StandardUUID, VendorUUID
 
 try:
-    from typing import Optional, List
-    from circuitpython_typing import WriteableBuffer, ReadableBuffer
+    from typing import List, Optional
+
+    from circuitpython_typing import ReadableBuffer, WriteableBuffer
 except ImportError:
     pass
 
@@ -37,10 +38,8 @@ CHUNK_SIZE = 490
 class FileTransferUUID(VendorUUID):
     """UUIDs with the CircuitPython base UUID."""
 
-    # pylint: disable=too-few-public-methods
-
     def __init__(self, uuid16: int) -> None:
-        uuid128 = bytearray("refsnarTeliF".encode("utf-8") + b"\x00\x00\xaf\xad")
+        uuid128 = bytearray(b"refsnarTeliF" + b"\x00\x00\xaf\xad")
         uuid128[-3] = uuid16 >> 8
         uuid128[-4] = uuid16 & 0xFF
         super().__init__(uuid128)
@@ -49,8 +48,6 @@ class FileTransferUUID(VendorUUID):
 class _TransferCharacteristic(ComplexCharacteristic):
     """Endpoint for sending commands to a media player. The value read will list all available
     commands."""
-
-    # pylint: disable=too-few-public-methods
 
     uuid = FileTransferUUID(0x0200)
 
@@ -68,9 +65,7 @@ class _TransferCharacteristic(ComplexCharacteristic):
     def bind(self, service: "FileTransferService") -> _bleio.PacketBuffer:
         """Binds the characteristic to the given Service."""
         bound_characteristic = super().bind(service)
-        return _bleio.PacketBuffer(
-            bound_characteristic, buffer_size=4, max_packet_size=512
-        )
+        return _bleio.PacketBuffer(bound_characteristic, buffer_size=4, max_packet_size=512)
 
 
 class FileTransferService(Service):
@@ -79,14 +74,10 @@ class FileTransferService(Service):
     The server dictates data transfer chunk sizes so it can minimize buffer sizes on its end.
     """
 
-    # pylint: disable=too-few-public-methods
-
     uuid = StandardUUID(0xFEBB)
     version = Uint32Characteristic(uuid=FileTransferUUID(0x0100), initial_value=4)
     raw = _TransferCharacteristic()
-    # _raw gets shadowed for each MIDIService instance by a PacketBuffer. PyLint doesn't know this
-    # so it complains about missing members.
-    # pylint: disable=no-member
+    # _raw gets shadowed for each MIDIService instance by a PacketBuffer.
 
     # Commands
     INVALID = 0x00
@@ -107,7 +98,7 @@ class FileTransferService(Service):
 
     # Responses
     # 0x00 is INVALID
-    OK = 0x01  # pylint: disable=invalid-name
+    OK = 0x01
     ERROR = 0x02
     ERROR_NO_FILE = 0x03
     ERROR_PROTOCOL = 0x04
@@ -152,15 +143,11 @@ class FileTransferClient:
 
     def read(self, path: str, *, offset: int = 0) -> bytearray:
         """Returns the contents of the file at the given path starting at the given offset"""
-        # pylint: disable=too-many-locals
         path = path.encode("utf-8")
         chunk_size = CHUNK_SIZE
         start_offset = offset
         encoded = (
-            struct.pack(
-                "<BxHII", FileTransferService.READ, len(path), offset, chunk_size
-            )
-            + path
+            struct.pack("<BxHII", FileTransferService.READ, len(path), offset, chunk_size) + path
         )
         self._write(encoded)
         b = bytearray(struct.calcsize("<BBxxIII") + chunk_size)
@@ -168,7 +155,6 @@ class FileTransferClient:
         chunk_done = True
         content_length = None
         chunk_end = 0
-        # pylint: disable=unsupported-assignment-operation
         buf = []
         data_header_size = struct.calcsize("<BBxxIII")
         while content_length is None or current_offset < content_length:
@@ -190,9 +176,7 @@ class FileTransferClient:
                 if not buf:
                     buf = bytearray(content_length - start_offset)
                 out_offset = current_offset - start_offset
-                buf[out_offset : out_offset + (read - data_header_size)] = b[
-                    data_header_size:read
-                ]
+                buf[out_offset : out_offset + (read - data_header_size)] = b[data_header_size:read]
                 current_offset += read - data_header_size
             else:
                 out_offset = current_offset - start_offset
@@ -252,10 +236,7 @@ class FileTransferClient:
             if status != FileTransferService.OK:
                 print("write error", status)
                 raise RuntimeError()
-            if (
-                cmd != FileTransferService.WRITE_PACING
-                or current_offset != written + offset
-            ):
+            if cmd != FileTransferService.WRITE_PACING or current_offset != written + offset:
                 self._write(
                     struct.pack(
                         "<BBxxII",
@@ -292,10 +273,7 @@ class FileTransferClient:
         if modification_time is None:
             modification_time = int(time.time() * 1_000_000_000)
         encoded = (
-            struct.pack(
-                "<BxHxxxxQ", FileTransferService.MKDIR, len(path), modification_time
-            )
-            + path
+            struct.pack("<BxHxxxxQ", FileTransferService.MKDIR, len(path), modification_time) + path
         )
         self._write(encoded)
 
@@ -310,7 +288,6 @@ class FileTransferClient:
 
     def listdir(self, path: str) -> List[tuple]:
         """Returns a list of tuples, one tuple for each file or directory in the given path"""
-        # pylint: disable=too-many-locals
         paths = []
         path = path.encode("utf-8")
         encoded = struct.pack("<BxH", FileTransferService.LISTDIR, len(path)) + path

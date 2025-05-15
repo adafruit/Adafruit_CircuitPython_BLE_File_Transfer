@@ -17,9 +17,9 @@ Introduction
     :alt: Build Status
 
 
-.. image:: https://img.shields.io/badge/code%20style-black-000000.svg
-    :target: https://github.com/psf/black
-    :alt: Code Style: Black
+.. image:: https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json
+    :target: https://github.com/astral-sh/ruff
+    :alt: Code Style: Ruff
 
 Simple BLE Service for reading and writing files over BLE. This BLE service is geared towards file
 transfer to and from a device running the service. A core part of the protocol is free space

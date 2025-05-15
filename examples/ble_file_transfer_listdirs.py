@@ -9,18 +9,17 @@ import sys
 
 from adafruit_ble import BLERadio
 from adafruit_ble.advertising.standard import (
-    ProvideServicesAdvertisement,
     Advertisement,
+    ProvideServicesAdvertisement,
 )
+
 import adafruit_ble_file_transfer
 
 # Connect to a file transfer device
 ble = BLERadio()
 connection = None
 print("disconnected, scanning")
-for advertisement in ble.start_scan(
-    ProvideServicesAdvertisement, Advertisement, timeout=1
-):
+for advertisement in ble.start_scan(ProvideServicesAdvertisement, Advertisement, timeout=1):
     # print(advertisement.address, advertisement.address.type)
     if (
         not hasattr(advertisement, "services")
