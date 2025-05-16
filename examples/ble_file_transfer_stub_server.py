@@ -3,11 +3,11 @@
 # SPDX-License-Identifier: Unlicense
 
 """This example broadcasts out the creation id based on the CircuitPython machine
-   string and provides a stub FileTransferService."""
+string and provides a stub FileTransferService."""
 
 import binascii
-import struct
 import os
+import struct
 import time
 
 import adafruit_ble
@@ -68,7 +68,7 @@ def write_packets(buf):
     sent = 0
     while offset < len(buf):
         this_packet = full_packet[: len(buf) - sent]
-        for k in range(len(this_packet)):  # pylint: disable=consider-using-enumerate
+        for k in range(len(this_packet)):
             this_packet[k] = buf[sent + k]
         sent += len(this_packet)
         service.raw.write(this_packet)
@@ -80,9 +80,7 @@ def read_complete_path(starting_path, total_length):
     remaining_path = total_length - current_path_length
     complete_path[:current_path_length] = starting_path
     if remaining_path > 0:
-        read_packets(
-            memoryview(complete_path)[current_path_length:], target_size=remaining_path
-        )
+        read_packets(memoryview(complete_path)[current_path_length:], target_size=remaining_path)
     return str(complete_path, "utf-8")
 
 
@@ -152,12 +150,8 @@ while True:
                     next_amount,
                 )
                 write_packets(header)
-                read = read_packets(
-                    packet_buffer, target_size=next_amount + write_data_header_size
-                )
-                cmd, status, offset, data_size = struct.unpack_from(
-                    "<BBxxII", packet_buffer
-                )
+                read = read_packets(packet_buffer, target_size=next_amount + write_data_header_size)
+                cmd, status, offset, data_size = struct.unpack_from("<BBxxII", packet_buffer)
                 if status != FileTransferService.OK:
                     print("bad status, resetting")
                     ok = False
@@ -226,20 +220,14 @@ while True:
                     len(contents),
                     next_amount,
                 )
-                write_packets(
-                    header + contents[contents_sent : contents_sent + next_amount]
-                )
+                write_packets(header + contents[contents_sent : contents_sent + next_amount])
                 contents_sent += next_amount
 
                 if contents_sent == len(contents):
                     break
 
-                read = read_packets(
-                    packet_buffer, target_size=struct.calcsize("<BBxxII")
-                )
-                cmd, status, offset, free_space = struct.unpack_from(
-                    "<BBxxII", packet_buffer
-                )
+                read = read_packets(packet_buffer, target_size=struct.calcsize("<BBxxII"))
+                cmd, status, offset, free_space = struct.unpack_from("<BBxxII", packet_buffer)
                 if cmd != FileTransferService.READ_PACING:
                     write_packets(
                         struct.pack(
@@ -390,17 +378,13 @@ while True:
             del stored_timestamps[path]
             del d[filename]
 
-            header = struct.pack(
-                "<BB", FileTransferService.DELETE_STATUS, FileTransferService.OK
-            )
+            header = struct.pack("<BB", FileTransferService.DELETE_STATUS, FileTransferService.OK)
             write_packets(header)
         elif command == adafruit_ble_file_transfer.FileTransferService.MOVE:
             old_path_length, new_path_length = struct.unpack_from("<xHH", p, offset=1)
             path_start = struct.calcsize("<BxHH")
             # We read in one extra character and then discard it. We don't need it. (C does.)
-            both_paths = read_complete_path(
-                p[path_start:], old_path_length + 1 + new_path_length
-            )
+            both_paths = read_complete_path(p[path_start:], old_path_length + 1 + new_path_length)
             old_path = both_paths[:old_path_length]
             new_path = both_paths[old_path_length + 1 :]
 
@@ -439,9 +423,7 @@ while True:
             stored_timestamps[new_path] = stored_timestamps[old_path]
             del stored_timestamps[old_path]
 
-            header = struct.pack(
-                "<BB", FileTransferService.MOVE_STATUS, FileTransferService.OK
-            )
+            header = struct.pack("<BB", FileTransferService.MOVE_STATUS, FileTransferService.OK)
             write_packets(header)
         else:
             print("unknown command", hex(command))

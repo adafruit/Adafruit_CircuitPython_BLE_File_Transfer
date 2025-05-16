@@ -11,14 +11,14 @@ import time
 
 from adafruit_ble import BLERadio
 from adafruit_ble.advertising.standard import (
-    ProvideServicesAdvertisement,
     Advertisement,
+    ProvideServicesAdvertisement,
 )
+
 import adafruit_ble_file_transfer
 
 
 def _write(client, filename, contents, *, offset=0):
-    # pylint: disable=redefined-outer-name
     start = time.monotonic()
     try:
         client.write(filename, contents, offset=offset)
@@ -32,7 +32,6 @@ def _write(client, filename, contents, *, offset=0):
 
 
 def _read(client, filename, *, offset=0):
-    # pylint: disable=redefined-outer-name
     start = time.monotonic()
     try:
         contents = client.read(filename, offset=offset)
@@ -73,7 +72,6 @@ while True:
     try:
         while ble.connected:
             for connection in ble.connections:
-                # pylint: disable=redefined-outer-name
                 if adafruit_ble_file_transfer.FileTransferService not in connection:
                     continue
                 if not connection.paired:
@@ -85,7 +83,7 @@ while True:
                 client = adafruit_ble_file_transfer.FileTransferClient(service)
 
                 print("Testing write")
-                client = _write(client, "/hello.txt", "Hello world".encode("utf-8"))
+                client = _write(client, "/hello.txt", b"Hello world")
                 time.sleep(1)
                 c = _read(client, "/hello.txt")
                 print(len(c), c)
@@ -101,9 +99,9 @@ while True:
                 print()
 
                 print("Test writing within dir")
-                client = _write(client, "/world/hi.txt", "Hi world".encode("utf-8"))
+                client = _write(client, "/world/hi.txt", b"Hi world")
 
-                hello_world = "Hello world".encode("utf-8")
+                hello_world = b"Hello world"
                 client = _write(client, "/world/hello.txt", hello_world)
                 c = _read(client, "/world/hello.txt")
                 print(c)
@@ -111,13 +109,11 @@ while True:
 
                 # Test offsets
                 print("Testing offsets")
-                hello = len("Hello ".encode("utf-8"))
+                hello = len(b"Hello ")
                 c = _read(client, "/world/hello.txt", offset=hello)
                 print(c)
 
-                client = _write(
-                    client, "/world/hello.txt", "offsets!".encode("utf-8"), offset=hello
-                )
+                client = _write(client, "/world/hello.txt", b"offsets!", offset=hello)
                 c = _read(client, "/world/hello.txt", offset=0)
                 print(c)
                 print()
@@ -174,18 +170,15 @@ while True:
                     raise RuntimeError("large contents don't match!")
                 print()
             time.sleep(20)
-    except ConnectionError as e:
+    except ConnectionError:
         pass
 
     print("disconnected, scanning")
-    for advertisement in ble.start_scan(
-        ProvideServicesAdvertisement, Advertisement, timeout=1
-    ):
+    for advertisement in ble.start_scan(ProvideServicesAdvertisement, Advertisement, timeout=1):
         # print(advertisement.address, advertisement.address.type)
         if (
             not hasattr(advertisement, "services")
-            or adafruit_ble_file_transfer.FileTransferService
-            not in advertisement.services
+            or adafruit_ble_file_transfer.FileTransferService not in advertisement.services
         ):
             continue
         ble.connect(advertisement)
